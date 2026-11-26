@@ -81,11 +81,26 @@ components:
       maxLength: 200
     Task:
       type: object
+      description: 基础字段由任务 API 维护；扩展字段由聊天中的智能体写入，读取时原样返回。
       required: [id, title, done]
       properties:
         id: { type: string, format: uuid }
         title: { $ref: "#/components/schemas/Title" }
         done: { type: boolean }
+        dueDate: { type: string, description: 截止日期，YYYY-MM-DD }
+        priority: { type: string, enum: [low, normal, high] }
+        effort: { type: string, enum: [small, medium, large] }
+        note: { type: string, description: 备注 }
+        subtasks:
+          type: array
+          description: 子任务列表
+          items:
+            type: object
+            required: [id, title, done]
+            properties:
+              id: { type: string }
+              title: { type: string }
+              done: { type: boolean }
     Error:
       type: object
       required: [error]
