@@ -1,3 +1,4 @@
+import { defaultActivity } from "./activity.ts";
 import { addDays, formatShortChineseDate, relativeDayLabel } from "./dates.ts";
 import {
   EFFORT_LABELS,
@@ -454,6 +455,11 @@ function missingChat(result: CommandResult, now: Date): string {
       return "要操作哪一条任务的子任务？把任务名说得更完整一些就行。";
     }
     return `要${verb}哪一条任务？告诉我任务名就行。`;
+  }
+
+  const deleted = defaultActivity.recentlyDeleted(hint, now.getTime());
+  if (deleted) {
+    return `「${deleted}」刚刚已经从清单里删掉了（清单面板操作），要重新记一条吗？`;
   }
 
   const head = `没找到和「${hint}」对应的任务。`;

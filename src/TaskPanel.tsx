@@ -72,10 +72,12 @@ export function TaskPanel({
   onToggleSubtask,
   onDelete,
   onRefresh,
+  notice,
 }: {
   tasks: ApiTask[];
   loading: boolean;
   error: string;
+  notice?: string;
   onToggle: (task: ApiTask) => void;
   onToggleSubtask: (task: ApiTask, subtaskId: string) => void;
   onDelete: (task: ApiTask) => void;
@@ -129,6 +131,11 @@ export function TaskPanel({
           {loading ? "刷新中…" : "刷新"}
         </button>
       </div>
+      {notice && (
+        <p className="panel-notice" role="status">
+          {notice}
+        </p>
+      )}
       <div className="panel-tabs" role="tablist">
         {(
           [

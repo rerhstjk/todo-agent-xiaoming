@@ -3,6 +3,12 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import type { ChatMessage } from "../shared/chat.ts";
+import {
+  defaultActivity,
+  describeActivity,
+  formatActivityTime,
+  ACTIVITY_WINDOW_MS,
+} from "./activity.ts";
 import { formatChineseDate } from "./dates.ts";
 import { pendingSummary } from "./format.ts";
 import { getModelClient, model } from "./model.ts";
@@ -136,7 +142,13 @@ function summarizeApplied(applied: string[], store: TaskStore): string {
   return `${applied.join("\n")}\n${pendingSummary(store.list())}`;
 }
 
-function systemPrompt(now: Date): string {
+export function systemPrompt(now: Date): string {
+  const panelActivity = defaultActivity.list({
+    limit: 8,
+    sinceMs: ACTIVITY_WINDOW_MS,
+    now: now.getTime(),
+  });
+
   return [
     "你是「小明」，一个中文待办清单智能体，帮用户管理任务。",
     `今天是 ${formatChineseDate(now)}。`,
@@ -152,6 +164,15 @@ function systemPrompt(now: Date): string {
     "8. 用户只是闲聊或打招呼时直接回应，不要强行创建任务。",
     "9. 工具返回的 message 已经包含准确的任务名和剩余待办，回答时优先沿用这些信息。",
     "10. 用户没说子任务加到哪条任务下时（例如「再增加一条子任务，购买咖啡」），用上一条回复里刚提到的任务作为 title；如果上一条没提到明确的单条任务，就先问「要加到哪条任务下？」，不要新建任务。",
+    ...(panelActivity.length > 0
+      ? [
+          "",
+          "用户最近在清单面板上的操作（只用于理解上下文，不要主动逐条复述）：",
+          ...panelActivity.map(
+            (entry) => `- ${formatActivityTime(entry.at)} ${describeActivity(entry)}`,
+          ),
+        ]
+      : []),
     "",
     "示例：",
     "用户：帮我记一下买牛奶",

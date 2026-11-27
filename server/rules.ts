@@ -1,4 +1,10 @@
 import type { ChatMessage } from "../shared/chat.ts";
+import {
+  ACTIVITY_WINDOW_MS,
+  defaultActivity,
+  describeActivity,
+  formatActivityTime,
+} from "./activity.ts";
 import { execute, type Command, type CommandResult, type NewTaskInput } from "./commands.ts";
 import { findDateText, formatChineseDate, stripClockTime } from "./dates.ts";
 import { chatReply, createBatchChat } from "./replies.ts";
@@ -22,6 +28,7 @@ type Intent =
   | { kind: "subtask"; hint: string; action: "add" | "complete" | "remove"; subtask: string }
   | { kind: "subtaskUnclear" }
   | { kind: "clearDone" }
+  | { kind: "activity" }
   | { kind: "greeting" }
   | { kind: "help" }
   | { kind: "empty" }
@@ -129,6 +136,15 @@ export function parseIntent(text: string, now = new Date()): Intent {
     return { kind: "greeting" };
   }
   if (/(你能做什么|你会什么|帮助|help|怎么用|使用说明)/i.test(value)) return { kind: "help" };
+
+  // 「刚才删了什么」「面板上你改了什么」：问的是面板操作，不是要删除任务。
+  if (
+    /^(?:你|我)?\s*(?:刚才|刚刚)?\s*(?:在)?(?:清单|面板)?(?:上)?\s*(?:删(?:除|掉)?|改|修改|动|操作)了?(?:什么|哪些|啥)/.test(
+      value,
+    )
+  ) {
+    return { kind: "activity" };
+  }
 
   if (CLEAR_DONE_WORDS.test(value)) return { kind: "clearDone" };
 
@@ -474,6 +490,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       return SUBTASK_UNCLEAR_TEXT;
     case "clearDone":
       return chatReply(execute(store, { kind: "clearDone" }, now), now);
+    case "activity":
+      return activityReply(now);
     case "greeting":
       return greeting(store, now);
     case "help":
@@ -509,6 +527,19 @@ function followUpChoice(messages: ChatMessage[]): Command | undefined {
 
   if (actionMatch[1] === "删除") return { kind: "remove", hint: title };
   return { kind: "setDone", hint: title, done: actionMatch[1] === "完成" };
+}
+
+function activityReply(now: Date): string {
+  const entries = defaultActivity.list({
+    limit: 8,
+    sinceMs: ACTIVITY_WINDOW_MS,
+    now: now.getTime(),
+  });
+  if (entries.length === 0) return "最近 30 分钟里，清单面板上没有新的操作。";
+  const lines = entries.map(
+    (entry) => `- ${formatActivityTime(entry.at)} ${describeActivity(entry)}`,
+  );
+  return ["最近在清单面板上的操作：", ...lines].join("\n");
 }
 
 function greeting(store: TaskStore, now: Date): string {

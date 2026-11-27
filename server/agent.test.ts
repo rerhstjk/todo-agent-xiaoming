@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import type { ChatMessage } from "../shared/chat.ts";
-import { answer, createReply } from "./agent.ts";
+import { defaultActivity } from "./activity.ts";
+import { answer, createReply, systemPrompt } from "./agent.ts";
 import { createJsonTaskStore } from "./task-store.ts";
 import { runTool } from "./tools.ts";
 
@@ -495,4 +496,36 @@ test("上下文不明确时不乱建任务，先追问加到哪条任务下", as
   const ambiguous = await send("加个子任务：买咖啡");
   assert.match(ambiguous, /要加到哪条任务下/);
   assert.equal(store.list().length, 2);
+});
+
+test("能回答刚才在面板上做了什么", async () => {
+  defaultActivity.clear();
+  const { send } = fixture();
+  defaultActivity.record({ kind: "deleted", title: "会议室预定" });
+  defaultActivity.record({ kind: "completed", title: "买牛奶" });
+
+  const reply = await send("刚才删了什么？");
+
+  assert.match(reply, /删除了「会议室预定」/);
+  assert.match(reply, /完成了「买牛奶」/);
+  defaultActivity.clear();
+});
+
+test("面板删掉的任务再被提起时，说明是面板删除而不是凭空消失", async () => {
+  defaultActivity.clear();
+  const { send } = fixture();
+  defaultActivity.record({ kind: "deleted", title: "开会" });
+
+  const reply = await send("把开会删掉");
+
+  assert.match(reply, /刚刚已经从清单里删掉了/);
+  defaultActivity.clear();
+});
+
+test("模型提示词里会带上最近的面板操作", () => {
+  defaultActivity.clear();
+  defaultActivity.record({ kind: "deleted", title: "开会" }, NOW.getTime() + 1000);
+
+  assert.match(systemPrompt(NOW), /删除了「开会」/);
+  defaultActivity.clear();
 });

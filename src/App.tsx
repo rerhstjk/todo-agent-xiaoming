@@ -25,7 +25,17 @@ export default function App() {
   const [tasks, setTasks] = useState<ApiTask[]>([]);
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState("");
+  const [panelNotice, setPanelNotice] = useState("");
   const input = useRef<HTMLTextAreaElement>(null);
+  const noticeTimer = useRef<number | undefined>(undefined);
+
+  // 面板操作会写入服务端的面板操作记录，小明下一轮就能看到；
+  // 这里顺手给用户一个「已经同步」的反馈。
+  function notifyAgent(message: string) {
+    setPanelNotice(message);
+    window.clearTimeout(noticeTimer.current);
+    noticeTimer.current = window.setTimeout(() => setPanelNotice(""), 4000);
+  }
 
   const refreshTasks = useCallback(async () => {
     setTasksLoading(true);
@@ -73,6 +83,7 @@ export default function App() {
     try {
       await setTaskDone(task.id, !task.done);
       setTasksError("");
+      notifyAgent(`已通知小明：${task.done ? "重新打开" : "完成"}「${task.title}」`);
     } catch (cause) {
       setTasksError(cause instanceof Error ? cause.message : "更新任务失败。");
     } finally {
@@ -90,6 +101,7 @@ export default function App() {
     try {
       await updateSubtasks(task.id, subtasks);
       setTasksError("");
+      notifyAgent(`已通知小明：更新了「${task.title}」的子任务`);
     } catch (cause) {
       setTasksError(cause instanceof Error ? cause.message : "更新子任务失败。");
     } finally {
@@ -102,6 +114,7 @@ export default function App() {
     try {
       await deleteTask(task.id);
       setTasksError("");
+      notifyAgent(`已通知小明：删除「${task.title}」`);
     } catch (cause) {
       setTasksError(cause instanceof Error ? cause.message : "删除任务失败。");
     } finally {
@@ -161,6 +174,7 @@ export default function App() {
           onToggleSubtask={toggleSubtask}
           onDelete={removeTask}
           onRefresh={refreshTasks}
+          notice={panelNotice}
         />
       </main>
     </div>

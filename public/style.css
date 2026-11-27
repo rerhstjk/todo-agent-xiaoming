@@ -382,3 +382,13 @@ textarea {
     border-top: 1px solid #e3e6ed;
   }
 }
+
+.panel-notice {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #eef2ff;
+  color: #2b3a8f;
+  font-size: 12px;
+  line-height: 1.5;
+}

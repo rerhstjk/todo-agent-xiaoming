@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import type { ChatMessage } from "../shared/chat.ts";
+import { defaultActivity } from "./activity.ts";
 import { createApp } from "./app.ts";
 import { createJsonTaskStore } from "./task-store.ts";
 
@@ -129,4 +130,37 @@ test("清单面板可以整组回写子任务的完成状态", async (t) => {
 
   const invalid = await request("PATCH", "/api/tasks/a", { subtasks: [{ id: "x" }] });
   assert.equal(invalid.status, 400);
+});
+
+test("清单面板的增删改会记录成面板操作，供智能体读取", async (t) => {
+  defaultActivity.clear();
+  t.after(() => defaultActivity.clear());
+  const { request } = await startTestApp(t);
+
+  const created = await request("POST", "/api/tasks", { title: "开会" });
+  const id = created.body.id;
+  await request("PATCH", `/api/tasks/${id}`, { done: true });
+  await request("PATCH", `/api/tasks/${id}`, { done: false });
+  await request("DELETE", `/api/tasks/${id}`);
+
+  assert.deepEqual(
+    defaultActivity.list().map((entry) => [entry.kind, entry.title]),
+    [
+      ["created", "开会"],
+      ["completed", "开会"],
+      ["reopened", "开会"],
+      ["deleted", "开会"],
+    ],
+  );
+});
+
+test("删除或修改不存在的任务时不会记成面板操作", async (t) => {
+  defaultActivity.clear();
+  t.after(() => defaultActivity.clear());
+  const { request } = await startTestApp(t);
+
+  await request("DELETE", "/api/tasks/missing");
+  await request("PATCH", "/api/tasks/missing", { done: true });
+
+  assert.deepEqual(defaultActivity.list(), []);
 });
