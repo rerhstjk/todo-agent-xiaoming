@@ -22,22 +22,9 @@ export const EFFORT_LABELS: Record<Effort, string> = {
   large: "大",
 };
 
-/** 距离截止时间不到一天（含已逾期）的未完成任务，展示时加感叹号提醒。 */
-export const URGENT_WINDOW_MS = 24 * 60 * 60 * 1000;
-
-export function isUrgent(task: Task, now = new Date()): boolean {
-  if (task.done) return false;
-  const due = taskDueDate(task);
-  if (!due) return false;
-  const moment = deadlineMoment(due, taskDueTime(task));
-  if (!moment) return false;
-  return moment.getTime() - now.getTime() <= URGENT_WINDOW_MS;
-}
-
-/** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行；快到截止时间时前面加“!”。 */
+/** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行。 */
 export function formatTaskLine(task: Task, now = new Date()): string {
-  const mark = isUrgent(task, now) ? "! " : "";
-  return `${mark}${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
+  return `${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
 }
 
 /** 带子任务明细的多行展示：第一行是任务，缩进列出每个子任务的标题和完成状态。 */

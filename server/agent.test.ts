@@ -567,7 +567,7 @@ test("只说时刻且今天已经过了时，顺延到明天", async () => {
   assert.equal(task?.dueTime, "05:00");
 });
 
-test("离截止不到一天的任务前面带感叹号，远的任务不带", async () => {
+test("清单回复带截止时刻，且不再加感叹号标记", async () => {
   const { store, send } = fixture();
 
   await send("今晚5点拿快递");
@@ -578,8 +578,9 @@ test("离截止不到一天的任务前面带感叹号，远的任务不带", as
   const urgent = lines.find((line) => line.includes("拿快递"));
   const later = lines.find((line) => line.includes("复盘"));
 
-  assert.match(urgent ?? "", /^! ○ 拿快递/);
+  assert.match(urgent ?? "", /^○ 拿快递/);
   assert.match(later ?? "", /^○ 复盘/);
+  assert.doesNotMatch(list, /!/);
   assert.equal(store.list().length, 2);
 });
 

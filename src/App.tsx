@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { ChatMessage } from "../shared/chat.ts";
 import {
   requestReply,
@@ -26,6 +34,10 @@ export default function App() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState("");
   const [panelNotice, setPanelNotice] = useState("");
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const saved = Number(window.localStorage.getItem("xiaoming.panelWidth"));
+    return Number.isFinite(saved) && saved >= 340 ? Math.min(720, saved) : 460;
+  });
   const input = useRef<HTMLTextAreaElement>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
 
@@ -52,6 +64,26 @@ export default function App() {
   useEffect(() => {
     void refreshTasks();
   }, [refreshTasks]);
+
+  useEffect(() => {
+    window.localStorage.setItem("xiaoming.panelWidth", String(panelWidth));
+  }, [panelWidth]);
+
+  // 拖动分隔条调整侧边栏宽度：面板在右侧，鼠标往左拖面板变宽。
+  function startResize(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = panelWidth;
+    function move(moveEvent: PointerEvent) {
+      setPanelWidth(Math.min(720, Math.max(340, startWidth - (moveEvent.clientX - startX))));
+    }
+    function stop() {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
 
   async function send(text: string) {
     const content = text.trim();
@@ -129,7 +161,7 @@ export default function App() {
         <strong>TokeNow</strong>
         <span>小明智能体</span>
       </header>
-      <main>
+      <main style={{ "--panel-width": `${panelWidth}px` } as CSSProperties}>
         <section className="chat">
           <ChatHistory messages={messages} pending={pending} onSelectPrompt={send} />
           <div className="compose">
@@ -166,6 +198,13 @@ export default function App() {
             <small>Enter 发送 · Shift + Enter 换行</small>
           </div>
         </section>
+        <div
+          className="resizer"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="拖动调整待办清单宽度"
+          onPointerDown={startResize}
+        />
         <TaskPanel
           tasks={tasks}
           loading={tasksLoading}
