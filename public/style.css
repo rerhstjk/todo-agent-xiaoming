@@ -213,6 +213,39 @@ textarea {
   border-color: #526ed8;
   color: #103ae1;
 }
+.suggestion-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  background: #eef2ff;
+  font-size: 12px;
+  color: #3c4a63;
+}
+.suggestion-choice-text {
+  margin-right: auto;
+}
+.suggestion-choice button {
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  background: white;
+  color: #2b3a5e;
+  padding: 3px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.suggestion-choice button:hover {
+  border-color: #526ed8;
+  color: #103ae1;
+}
+.suggestion-choice .suggestion-cancel {
+  border-color: transparent;
+  background: transparent;
+  color: #6b788c;
+}
 .suggestion:disabled {
   color: #a3acbd;
   border-color: #e6e9f0;

@@ -45,6 +45,9 @@ export default function App() {
   // 语音输入前已经打好的文字，识别结果追加在它后面。
   const speechBase = useRef("");
   const [speechError, setSpeechError] = useState("");
+  // 输入框里已有内容时，点提示词先让用户选择追加还是替换。
+  const [pendingSuggestion, setPendingSuggestion] = useState<string | null>(null);
+  const appendChoice = useRef<HTMLButtonElement>(null);
 
   const {
     supported: speechSupported,
@@ -174,6 +177,35 @@ export default function App() {
     }
   }
 
+  useEffect(() => {
+    if (pendingSuggestion) appendChoice.current?.focus();
+  }, [pendingSuggestion]);
+
+  // 选择期间用户把输入框清空了，就不用再问追加还是替换。
+  useEffect(() => {
+    if (pendingSuggestion && !draft.trim()) insertSuggestion(pendingSuggestion, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, pendingSuggestion]);
+
+  function insertSuggestion(text: string, mode: "append" | "replace") {
+    setDraft(mode === "append" ? `${draft.trimEnd()}${text}` : text);
+    setPendingSuggestion(null);
+    requestAnimationFrame(() => {
+      const field = input.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(field.value.length, field.value.length);
+    });
+  }
+
+  function chooseSuggestion(text: string) {
+    if (draft.trim()) {
+      setPendingSuggestion(text);
+      return;
+    }
+    insertSuggestion(text, "replace");
+  }
+
   function toggleSpeech() {
     setSpeechError("");
     if (listening) {
@@ -203,20 +235,55 @@ export default function App() {
                   className="suggestion"
                   title={`${item.text}（点一下填进输入框，可以再改）`}
                   disabled={pending}
-                  onClick={() => {
-                    setDraft(item.text);
-                    requestAnimationFrame(() => {
-                      const field = input.current;
-                      if (!field) return;
-                      field.focus();
-                      field.setSelectionRange(field.value.length, field.value.length);
-                    });
-                  }}
+                  onClick={() => chooseSuggestion(item.text)}
                 >
                   {item.label}
                 </button>
               ))}
             </div>
+            {pendingSuggestion && (
+              <div
+                className="suggestion-choice"
+                role="group"
+                aria-label="提示词插入方式"
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setPendingSuggestion(null);
+                    input.current?.focus();
+                  }
+                }}
+              >
+                <span className="suggestion-choice-text">
+                  输入框里已有内容，这句是追加还是替换？
+                </span>
+                <button
+                  type="button"
+                  ref={appendChoice}
+                  disabled={pending}
+                  onClick={() => insertSuggestion(pendingSuggestion, "append")}
+                >
+                  追加到后面
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => insertSuggestion(pendingSuggestion, "replace")}
+                >
+                  替换原有内容
+                </button>
+                <button
+                  type="button"
+                  className="suggestion-cancel"
+                  disabled={pending}
+                  onClick={() => {
+                    setPendingSuggestion(null);
+                    input.current?.focus();
+                  }}
+                >
+                  取消
+                </button>
+              </div>
+            )}
             {error && (
               <p className="error" role="alert">
                 {error}
