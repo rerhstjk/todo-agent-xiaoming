@@ -153,6 +153,17 @@ export function parseIntent(text: string, now = new Date()): Intent {
     if (hint && dueDate) return { kind: "update", hint, dueDate };
   }
 
+  // 「再增加一条子任务，购买咖啡」「加个子任务：买咖啡」：没说加到哪条任务下，
+  // 先用上下文里的上一条任务，解析层只把名字留空。
+  const implicitSubtaskAdd =
+    /^(?:再|还|另外|顺便)?\s*(?:给|帮|为)?\s*(?:增加|添加|新增|加|记)\s*(?:一个|一条|个)?\s*子任务\s*[:：,，]?\s*(.+)$/.exec(
+      value,
+    );
+  if (implicitSubtaskAdd) {
+    const subtask = cleanTitle(implicitSubtaskAdd[1]);
+    if (subtask) return { kind: "subtask", hint: "", action: "add", subtask };
+  }
+
   const subtaskAdd =
     /^(?:给|帮|为)?\s*(.+?)\s*(?:加|添加|新增|增加)\s*(?:一个|一条|个)?\s*子任务\s*[:：,，]?\s*(.+)$/.exec(
       value,
@@ -291,7 +302,7 @@ function extractHint(text: string, verbs: string[]): string {
     value = value.split(verb).join(" ");
   }
   value = value.replace(/(这个|那个|这条|那条|这些|那些|任务|待办|事项|这条任务|那条任务)/g, " ");
-  value = value.replace(/^(请|麻烦你|麻烦|帮我|帮忙|给我|把|将|我|已经|都|再|顺便)+/, " ");
+  value = value.replace(/^(请|麻烦你|麻烦|帮我|帮忙|给我|把|将|我|已经|都|再|顺便|给|帮|为)+/, " ");
   value = value.replace(/[的地得了吧啊呀哦呢啦]/g, " ");
   return cleanTitle(value.replace(/\s+/g, " "));
 }
@@ -374,6 +385,19 @@ function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date):
   return createBatchChat(results, now);
 }
 
+/** 没说加到哪条任务时，优先用上一条回复里提到的任务；否则只有一条待办时就用它。 */
+function contextTask(store: TaskStore, messages: ChatMessage[]): string | undefined {
+  const previous =
+    [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  const open = store.list().filter((task) => !task.done);
+  if (open.length === 0) return undefined;
+
+  const mentioned = open.filter((task) => previous.includes(task.title));
+  // 上一条回复只提到一条任务时才用它；列出好几条说明用户还没指定，宁可追问。
+  if (mentioned.length === 1) return mentioned[0]!.title;
+  return open.length === 1 ? open[0]!.title : undefined;
+}
+
 export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new Date()): string {
   const choice = followUpChoice(messages);
   if (choice) return chatReply(execute(store, choice, now), now);
@@ -429,20 +453,23 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       if (intent.priority) patch.priority = intent.priority;
       return chatReply(execute(store, { kind: "update", hint: intent.hint, patch }, now), now);
     }
-    case "subtask":
+    case "subtask": {
+      const generic =
+        !intent.hint ||
+        /^(这条|那条|它|这个|那个|该任务|上面那条|刚才那条|任务|待办)$/.test(intent.hint);
+      const hint = generic ? (contextTask(store, messages) ?? "") : intent.hint;
+      if (!hint) {
+        return "要加到哪条任务下？可以说「给开会加子任务：买咖啡」。";
+      }
       return chatReply(
         execute(
           store,
-          {
-            kind: "subtask",
-            hint: intent.hint,
-            action: intent.action,
-            subtask: intent.subtask,
-          },
+          { kind: "subtask", hint, action: intent.action, subtask: intent.subtask },
           now,
         ),
         now,
       );
+    }
     case "subtaskUnclear":
       return SUBTASK_UNCLEAR_TEXT;
     case "clearDone":

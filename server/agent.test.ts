@@ -468,3 +468,31 @@ test("没有连接词的分句不会误拆成两条任务", async () => {
   assert.equal(store.list().length, 1);
   assert.equal(store.list()[0]?.title, "开会，讨论预算");
 });
+
+test("没点名是哪条任务时，子任务挂到上一条提到的任务下", async () => {
+  const { store, send } = fixture();
+
+  await send("提醒我周五开会，子任务：准备材料");
+  const reply = await send("再增加一条子任务，购买咖啡");
+
+  assert.match(reply, /已给「开会」添加子任务「购买咖啡」/);
+  assert.equal(store.list().length, 1);
+  assert.deepEqual(
+    store.list()[0]?.subtasks?.map((subtask) => subtask.title),
+    ["准备材料", "购买咖啡"],
+  );
+});
+
+test("上下文不明确时不乱建任务，先追问加到哪条任务下", async () => {
+  const { store, send } = fixture();
+
+  const empty = await send("加个子任务：买咖啡");
+  assert.match(empty, /要加到哪条任务下/);
+  assert.equal(store.list().length, 0);
+
+  await send("记一下开会");
+  await send("记一下取快递");
+  const ambiguous = await send("加个子任务：买咖啡");
+  assert.match(ambiguous, /要加到哪条任务下/);
+  assert.equal(store.list().length, 2);
+});
