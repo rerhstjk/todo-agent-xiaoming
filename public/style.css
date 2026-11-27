@@ -193,6 +193,35 @@ textarea {
   color: #667289;
   cursor: default;
 }
+.mic {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  border: 1px solid #dce1ec;
+  background: white;
+  font-size: 17px;
+  color: #515c71;
+  padding: 0;
+}
+.mic:hover {
+  border-color: #526ed8;
+}
+.mic.listening {
+  background: #fee4e2;
+  border-color: #e2a19a;
+  color: #b03a2c;
+  animation: mic-pulse 1.4s infinite;
+}
+@keyframes mic-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 #e2a19a66;
+  }
+  50% {
+    box-shadow: 0 0 0 7px #e2a19a00;
+  }
+}
 .compose small {
   display: block;
   text-align: center;
@@ -456,7 +485,204 @@ textarea {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.panel-views {
+  display: flex;
+  gap: 4px;
+  margin-top: 10px;
+  padding: 3px;
+  background: #f5f6f9;
+  border-radius: 9px;
+}
+.panel-views button {
+  flex: 1;
+  border: 0;
+  background: transparent;
+  padding: 5px 0;
+  border-radius: 7px;
+  font-size: 12.5px;
+  color: #6b788c;
+}
+.panel-views button.active {
+  background: white;
+  color: #103ae1;
+  font-weight: 600;
+  box-shadow: 0 1px 2px #1b305814;
+}
+.calendar {
+  margin-top: 12px;
+}
+.calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #f1f2f4;
+  border-radius: 14px;
+  padding: 4px 8px;
+}
+.calendar-nav {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: transparent;
+  color: #8b95a8;
+  font-size: 20px;
+  line-height: 1;
+  padding: 0;
+}
+.calendar-title strong {
+  font-size: 19px;
+  letter-spacing: -0.02em;
+}
+.calendar-title span {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #8b95a8;
+}
+.calendar-today-link {
+  display: block;
+  margin: 6px auto 0;
+  border: 0;
+  background: transparent;
+  color: #526ed8;
+  font-size: 12px;
+}
+.calendar-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-top: 10px;
+  font-size: 12px;
+  color: #8b95a8;
+  text-align: center;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+.calendar-day {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #3e4a5f;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+.calendar-day:hover {
+  background: #f4f6fa;
+}
+.calendar-day.is-today {
+  background: #e8722a;
+  color: white;
+  font-weight: 600;
+}
+.calendar-day.is-selected:not(.is-today) {
+  background: #fdece1;
+  color: #c2551f;
+}
+.calendar-badge {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #1f2937;
+  color: white;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+.calendar-day.is-today .calendar-badge {
+  background: #3d2a1d;
+}
+.calendar-dot {
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #c3cad8;
+}
+.day-detail {
+  margin-top: 14px;
+  border-top: 1px solid #eef0f4;
+  padding-top: 12px;
+}
+.day-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.day-detail-head strong {
+  font-size: 13.5px;
+}
+.day-chip {
+  flex: none;
+  font-size: 11px;
+  color: #c2551f;
+  background: #fdece1;
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.day-tasks {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+.day-tasks li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.day-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-top: 5px;
+  border: 0;
+  border-radius: 50%;
+  background: #e8722a;
+  padding: 0;
+}
+.day-tasks li.done .day-dot {
+  background: #c3cad8;
+}
+.day-task-body {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.day-task-title {
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.day-tasks li.done .day-task-title {
+  color: #98a2b3;
+  text-decoration: line-through;
+}
+.day-task-meta {
+  font-size: 11.5px;
+  color: #8b95a8;
+}
 @media (max-width: 900px) {
+  .calendar-day {
+    aspect-ratio: auto;
+    height: 38px;
+  }
   main {
     flex-direction: column;
   }

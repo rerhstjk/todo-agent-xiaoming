@@ -18,6 +18,7 @@ import {
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
+import { useSpeechInput } from "./use-speech.ts";
 
 function isSendShortcut(event: KeyboardEvent<HTMLTextAreaElement>) {
   // 中文输入法会用 Enter 确认选词，部分浏览器此时只报告键码 229。
@@ -40,6 +41,22 @@ export default function App() {
   });
   const input = useRef<HTMLTextAreaElement>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
+  // 语音输入前已经打好的文字，识别结果追加在它后面。
+  const speechBase = useRef("");
+  const [speechError, setSpeechError] = useState("");
+
+  const {
+    supported: speechSupported,
+    listening,
+    start: startSpeech,
+    stop: stopSpeech,
+  } = useSpeechInput(
+    ({ text, final }) => {
+      if (final) speechBase.current = `${speechBase.current}${text}`.trim();
+      setDraft(final ? speechBase.current : `${speechBase.current}${text}`.trim());
+    },
+    (message) => setSpeechError(message),
+  );
 
   // 面板操作会写入服务端的面板操作记录，小明下一轮就能看到；
   // 这里顺手给用户一个「已经同步」的反馈。
@@ -88,6 +105,8 @@ export default function App() {
   async function send(text: string) {
     const content = text.trim();
     if (!content || pending) return;
+    if (listening) stopSpeech();
+    setSpeechError("");
     const outgoing: ChatMessage[] = [...messages, { role: "user", content }];
     setMessages(outgoing);
     setDraft("");
@@ -154,6 +173,16 @@ export default function App() {
     }
   }
 
+  function toggleSpeech() {
+    setSpeechError("");
+    if (listening) {
+      stopSpeech();
+      return;
+    }
+    speechBase.current = draft.trim() ? `${draft.trim()} ` : "";
+    startSpeech();
+  }
+
   return (
     <div className="app">
       <header>
@@ -168,6 +197,11 @@ export default function App() {
             {error && (
               <p className="error" role="alert">
                 {error}
+              </p>
+            )}
+            {speechError && (
+              <p className="error" role="alert">
+                {speechError}
               </p>
             )}
             <form
@@ -191,11 +225,27 @@ export default function App() {
                   }
                 }}
               />
+              {speechSupported && (
+                <button
+                  type="button"
+                  className={`mic${listening ? " listening" : ""}`}
+                  aria-label={listening ? "停止语音输入" : "开始语音输入"}
+                  aria-pressed={listening}
+                  title={listening ? "正在听，点一下停止" : "用中文说一句，自动填进输入框"}
+                  disabled={pending}
+                  onClick={toggleSpeech}
+                >
+                  {listening ? "●" : "🎤"}
+                </button>
+              )}
               <button className="send" disabled={pending || !draft.trim()} aria-label="发送消息">
                 ↑
               </button>
             </form>
-            <small>Enter 发送 · Shift + Enter 换行</small>
+            <small>
+              Enter 发送 · Shift + Enter 换行
+              {speechSupported && " · 点麦克风用中文说话"}
+            </small>
           </div>
         </section>
         <div

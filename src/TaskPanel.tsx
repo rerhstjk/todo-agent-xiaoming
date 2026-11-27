@@ -1,5 +1,7 @@
 import { useState } from "react";
 import type { ApiTask } from "./chat-client.ts";
+import { TaskCalendar } from "./TaskCalendar.tsx";
+import { compareTasks, dueText, endOfWeek, isOverdue, toDateString } from "./task-dates.ts";
 
 type Priority = "high" | "normal" | "low";
 type Effort = "small" | "medium" | "large";
@@ -7,80 +9,9 @@ type Effort = "small" | "medium" | "large";
 const PRIORITY_LABELS: Record<Priority, string> = { high: "高", normal: "中", low: "低" };
 const EFFORT_LABELS: Record<Effort, string> = { small: "小", medium: "中", large: "大" };
 
-function pad(value: number): string {
-  return `${value}`.padStart(2, "0");
-}
-
-function toDateString(date: Date): string {
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
-/** 截止时刻：有 HH:mm 就取那一刻，否则取当天 23:59。 */
-function deadline(task: ApiTask): number | undefined {
-  if (!task.dueDate) return undefined;
-  const [year, month, day] = task.dueDate.split("-").map(Number);
-  if (!year || !month || !day) return undefined;
-  const [hour, minute] = (task.dueTime ?? "23:59").split(":").map(Number);
-  return new Date(year, month - 1, day, hour ?? 23, minute ?? 59).getTime();
-}
-
-function isOverdue(task: ApiTask): boolean {
-  const moment = deadline(task);
-  return !task.done && moment !== undefined && moment < Date.now();
-}
-
-/** 表格里的截止时间：今天 17:00 / 明天 09:30 / 11月30日 / 已逾期 · 11月26日。 */
-function dueText(task: ApiTask): string {
-  if (!task.dueDate) return "—";
-  const [year, month, day] = task.dueDate.split("-").map(Number);
-  if (!year || !month || !day) return task.dueDate;
-  const time = task.dueTime ? ` ${task.dueTime}` : "";
-  if (isOverdue(task)) return `已逾期 · ${month}月${day}日${time}`;
-  const today = toDateString(new Date());
-  const days = Math.round(
-    (Date.UTC(year, month - 1, day) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000,
-  );
-  const prefix =
-    days === 0
-      ? "今天"
-      : days === 1
-        ? "明天"
-        : days === 2
-          ? "后天"
-          : days < 0
-            ? "已逾期"
-            : `${month}月${day}日`;
-  return `${prefix}${time}`;
-}
-
-function compareTasks(a: ApiTask, b: ApiTask): number {
-  const weight: Record<string, number> = { high: 0, normal: 1, low: 2 };
-  if (a.dueDate !== b.dueDate) {
-    if (!a.dueDate) return 1;
-    if (!b.dueDate) return -1;
-    return a.dueDate < b.dueDate ? -1 : 1;
-  }
-  if ((a.dueTime ?? "") !== (b.dueTime ?? "")) {
-    return (a.dueTime ?? "23:59") < (b.dueTime ?? "23:59") ? -1 : 1;
-  }
-  if (a.priority !== b.priority) {
-    return (weight[a.priority ?? "normal"] ?? 1) - (weight[b.priority ?? "normal"] ?? 1);
-  }
-  return 0;
-}
-
 type Filter = "open" | "today" | "week" | "overdue" | "done";
 type PriorityFilter = "all" | Priority;
 type EffortFilter = "all" | Effort;
-
-/** 本周的最后一天（周日）。 */
-function endOfWeek(): string {
-  const date = new Date();
-  const weekday = date.getDay();
-  const end = new Date(date);
-  end.setDate(date.getDate() + (weekday === 0 ? 0 : 7 - weekday));
-  return toDateString(end);
-}
 
 const FILTERS: { value: Filter; label: string; empty: string }[] = [
   { value: "open", label: "待办", empty: "清单是空的，跟小明说一声就行。" },
@@ -109,6 +40,7 @@ export function TaskPanel({
   onDelete: (task: ApiTask) => void;
   onRefresh: () => void;
 }) {
+  const [view, setView] = useState<"list" | "calendar">("list");
   const [filter, setFilter] = useState<Filter>("open");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [effortFilter, setEffortFilter] = useState<EffortFilter>("all");
@@ -160,25 +92,45 @@ export function TaskPanel({
           {loading ? "刷新中…" : "刷新"}
         </button>
       </div>
+      <div className="panel-views" role="tablist" aria-label="清单视图">
+        <button
+          role="tab"
+          aria-selected={view === "list"}
+          className={view === "list" ? "active" : ""}
+          onClick={() => setView("list")}
+        >
+          清单
+        </button>
+        <button
+          role="tab"
+          aria-selected={view === "calendar"}
+          className={view === "calendar" ? "active" : ""}
+          onClick={() => setView("calendar")}
+        >
+          日历
+        </button>
+      </div>
       {notice && (
         <p className="panel-notice" role="status">
           {notice}
         </p>
       )}
       <div className="panel-toolbar">
-        <div className="panel-tabs" role="tablist">
-          {FILTERS.map((item) => (
-            <button
-              key={item.value}
-              role="tab"
-              aria-selected={filter === item.value}
-              className={filter === item.value ? "active" : ""}
-              onClick={() => setFilter(item.value)}
-            >
-              {item.label} {counts[item.value]}
-            </button>
-          ))}
-        </div>
+        {view === "list" && (
+          <div className="panel-tabs" role="tablist">
+            {FILTERS.map((item) => (
+              <button
+                key={item.value}
+                role="tab"
+                aria-selected={filter === item.value}
+                className={filter === item.value ? "active" : ""}
+                onClick={() => setFilter(item.value)}
+              >
+                {item.label} {counts[item.value]}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="panel-filters">
           <select
             aria-label="按优先级筛选"
@@ -209,87 +161,91 @@ export function TaskPanel({
           {error}
         </p>
       )}
-      <div className="panel-table" role="table" aria-label="任务表格">
-        <div className="panel-row panel-row-head" role="row">
-          <span role="columnheader">任务名称</span>
-          <span role="columnheader">截止时间</span>
-          <span role="columnheader">工作量</span>
-          <span role="columnheader">优先级</span>
-        </div>
-        {visible.length === 0 ? (
-          <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
-        ) : (
-          visible.map((task) => {
-            const subtasks = task.subtasks ?? [];
-            const finished = subtasks.filter((item) => item.done).length;
-            const overdue = isOverdue(task);
-            const priority = task.priority ?? "normal";
-            return (
-              <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
-                <div className="cell-title" role="cell">
-                  <button
-                    className="check"
-                    aria-label={
-                      task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`
-                    }
-                    aria-pressed={task.done}
-                    onClick={() => onToggle(task)}
-                  >
-                    {task.done ? "✓" : ""}
-                  </button>
-                  <div className="task-body">
-                    <div className="task-main">
-                      <span className="task-title">{task.title}</span>
+      {view === "calendar" ? (
+        <TaskCalendar tasks={pool} onToggle={onToggle} />
+      ) : (
+        <div className="panel-table" role="table" aria-label="任务表格">
+          <div className="panel-row panel-row-head" role="row">
+            <span role="columnheader">任务名称</span>
+            <span role="columnheader">截止时间</span>
+            <span role="columnheader">工作量</span>
+            <span role="columnheader">优先级</span>
+          </div>
+          {visible.length === 0 ? (
+            <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
+          ) : (
+            visible.map((task) => {
+              const subtasks = task.subtasks ?? [];
+              const finished = subtasks.filter((item) => item.done).length;
+              const overdue = isOverdue(task);
+              const priority = task.priority ?? "normal";
+              return (
+                <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
+                  <div className="cell-title" role="cell">
+                    <button
+                      className="check"
+                      aria-label={
+                        task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`
+                      }
+                      aria-pressed={task.done}
+                      onClick={() => onToggle(task)}
+                    >
+                      {task.done ? "✓" : ""}
+                    </button>
+                    <div className="task-body">
+                      <div className="task-main">
+                        <span className="task-title">{task.title}</span>
+                        {subtasks.length > 0 && (
+                          <span className="subtask-count">
+                            子任务 {finished}/{subtasks.length}
+                          </span>
+                        )}
+                      </div>
                       {subtasks.length > 0 && (
-                        <span className="subtask-count">
-                          子任务 {finished}/{subtasks.length}
-                        </span>
+                        <ul className="subtask-list">
+                          {subtasks.map((subtask) => (
+                            <li key={subtask.id} className={subtask.done ? "done" : ""}>
+                              <button
+                                className="subtask-check"
+                                aria-label={
+                                  subtask.done
+                                    ? `把子任务「${subtask.title}」重新打开`
+                                    : `完成子任务「${subtask.title}」`
+                                }
+                                aria-pressed={subtask.done}
+                                onClick={() => onToggleSubtask(task, subtask.id)}
+                              >
+                                {subtask.done ? "✓" : "○"}
+                              </button>
+                              <span className="subtask-title">{subtask.title}</span>
+                            </li>
+                          ))}
+                        </ul>
                       )}
                     </div>
-                    {subtasks.length > 0 && (
-                      <ul className="subtask-list">
-                        {subtasks.map((subtask) => (
-                          <li key={subtask.id} className={subtask.done ? "done" : ""}>
-                            <button
-                              className="subtask-check"
-                              aria-label={
-                                subtask.done
-                                  ? `把子任务「${subtask.title}」重新打开`
-                                  : `完成子任务「${subtask.title}」`
-                              }
-                              aria-pressed={subtask.done}
-                              onClick={() => onToggleSubtask(task, subtask.id)}
-                            >
-                              {subtask.done ? "✓" : "○"}
-                            </button>
-                            <span className="subtask-title">{subtask.title}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                    <button
+                      className="delete"
+                      aria-label={`删除「${task.title}」`}
+                      onClick={() => onDelete(task)}
+                    >
+                      ×
+                    </button>
                   </div>
-                  <button
-                    className="delete"
-                    aria-label={`删除「${task.title}」`}
-                    onClick={() => onDelete(task)}
-                  >
-                    ×
-                  </button>
+                  <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
+                    {dueText(task)}
+                  </span>
+                  <span className="cell-effort" role="cell">
+                    {task.effort ? EFFORT_LABELS[task.effort] : "—"}
+                  </span>
+                  <span className="cell-priority" role="cell">
+                    <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
+                  </span>
                 </div>
-                <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
-                  {dueText(task)}
-                </span>
-                <span className="cell-effort" role="cell">
-                  {task.effort ? EFFORT_LABELS[task.effort] : "—"}
-                </span>
-                <span className="cell-priority" role="cell">
-                  <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
-                </span>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })
+          )}
+        </div>
+      )}
       <p className="panel-note">可以直接在对话里说「牛奶买好了」让小明更新清单。</p>
     </aside>
   );
