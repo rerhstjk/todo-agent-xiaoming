@@ -1,6 +1,6 @@
 /**
- * 日期工具。整份清单只记录“日期”（YYYY-MM-DD），不记录具体时刻，
- * 因此这里全部按服务器本地时区的日历日计算，避免跨时区把“今天”算错。
+ * 日期工具。清单以服务器本地时区计算“今天”，
+ * 任务可以带 HH:mm 的截止时刻，展示时统一用本地时间。
  */
 
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
@@ -169,4 +169,100 @@ export function relativeDayLabel(value: string, now = new Date()): string {
   return sameYear
     ? `${date.getMonth() + 1}月${date.getDate()}日`
     : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+const DIGITS: Record<string, number> = {
+  零: 0,
+  〇: 0,
+  一: 1,
+  二: 2,
+  两: 2,
+  三: 3,
+  四: 4,
+  五: 5,
+  六: 6,
+  七: 7,
+  八: 8,
+  九: 9,
+};
+
+function toNumber(raw: string | undefined): number | undefined {
+  if (raw === undefined || raw === "") return undefined;
+  if (raw === "半") return 30;
+  if (/^\d+$/.test(raw)) return Number(raw);
+  if (raw.includes("十")) {
+    const [tens, ones] = raw.split("十");
+    const left = tens === "" ? 1 : DIGITS[tens];
+    const right = ones === "" ? 0 : DIGITS[ones];
+    if (left === undefined || right === undefined) return undefined;
+    return left * 10 + right;
+  }
+  return DIGITS[raw];
+}
+
+const CLOCK_SEARCH =
+  /(凌晨|早上|上午|中午|下午|傍晚|晚上|夜里|今晚|明晚|明早|今天下午|明天下午)?\s*(\d{1,2}|[一二三四五六七八九十两]{1,3})\s*(?:点|时|[:：])\s*(半|\d{1,2}|[一二三四五六七八九十]{1,3})?\s*分?/;
+
+export interface ClockMatch {
+  /** HH:mm，例如“17:00”。 */
+  value: string;
+  /** 原文里匹配到的片段，用来从标题中删掉。 */
+  matched: string;
+  /** “今晚”这类词自带的天信息，交给调用方决定用哪一天。 */
+  day?: "today" | "tomorrow";
+}
+
+/** 从中文里找出具体时刻，例如“下午三点”“今晚5点半”“17:30”。 */
+export function findClockTime(text: string): ClockMatch | undefined {
+  const match = CLOCK_SEARCH.exec(text);
+  if (!match) return undefined;
+  const [matched, modifier = "", rawHour, rawMinute] = match;
+  let hour = toNumber(rawHour);
+  const minute = rawMinute === undefined || rawMinute === "" ? 0 : toNumber(rawMinute);
+  if (hour === undefined || minute === undefined) return undefined;
+  if (minute > 59) return undefined;
+
+  if (/(凌晨)/.test(modifier) && hour === 12) hour = 0;
+  if (/(下午|傍晚|晚上|夜里|今晚|明晚)/.test(modifier) && hour < 12) hour += 12;
+  if (/中午/.test(modifier) && hour >= 1 && hour <= 2) hour += 12;
+  if (hour > 23) return undefined;
+
+  const day = /(明天|明晚|明早)/.test(modifier)
+    ? "tomorrow"
+    : /(今天|今晚)/.test(modifier)
+      ? "today"
+      : undefined;
+
+  return {
+    value: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    matched,
+    day,
+  };
+}
+
+/**
+ * 截止时刻：有具体时刻就取那一刻，没有就取当天 23:59，
+ * 这样“今天到期”的任务在当天结束前不会被算成逾期。
+ */
+export function deadlineMoment(date: string, time?: string): Date | undefined {
+  const day = parseDateString(date);
+  if (!day) return undefined;
+  if (time) {
+    const match = /^(\d{2}):(\d{2})$/.exec(time);
+    if (match) {
+      return new Date(
+        day.getFullYear(),
+        day.getMonth(),
+        day.getDate(),
+        Number(match[1]),
+        Number(match[2]),
+      );
+    }
+  }
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate(), 23, 59);
+}
+
+/** 把 HH:mm 变成“17:00”这种展示文本，没有时刻时返回空串。 */
+export function formatClockTime(time: string | undefined): string {
+  return time && /^\d{2}:\d{2}$/.test(time) ? time : "";
 }

@@ -20,6 +20,7 @@ export type SubtaskAction = "add" | "complete" | "remove";
 export interface NewTaskInput {
   title: string;
   dueDate?: string;
+  dueTime?: string;
   priority?: Priority;
   effort?: Effort;
   note?: string;
@@ -204,7 +205,10 @@ function update(store: TaskStore, command: Extract<Command, { kind: "update" }>)
   const located = locate(command, tasks);
   if ("failed" in located) return located.failed;
   const task = located.task;
-  const updated = store.update(task.id, command.patch);
+  // 清掉日期时，时刻也没有意义了，一起删掉，避免留下孤立的 17:00。
+  const patch =
+    command.patch.dueDate === null ? { ...command.patch, dueTime: null } : command.patch;
+  const updated = store.update(task.id, patch);
   return {
     command,
     status: updated ? "ok" : "missing",

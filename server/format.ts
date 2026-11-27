@@ -1,6 +1,7 @@
-import { dayDiff, relativeDayLabel } from "./dates.ts";
+import { dayDiff, deadlineMoment, relativeDayLabel } from "./dates.ts";
 import {
   taskDueDate,
+  taskDueTime,
   taskEffort,
   taskPriority,
   taskSubtasks,
@@ -21,9 +22,22 @@ export const EFFORT_LABELS: Record<Effort, string> = {
   large: "大",
 };
 
-/** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行。 */
+/** 距离截止时间不到一天（含已逾期）的未完成任务，展示时加感叹号提醒。 */
+export const URGENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+export function isUrgent(task: Task, now = new Date()): boolean {
+  if (task.done) return false;
+  const due = taskDueDate(task);
+  if (!due) return false;
+  const moment = deadlineMoment(due, taskDueTime(task));
+  if (!moment) return false;
+  return moment.getTime() - now.getTime() <= URGENT_WINDOW_MS;
+}
+
+/** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行；快到截止时间时前面加“!”。 */
 export function formatTaskLine(task: Task, now = new Date()): string {
-  return `${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
+  const mark = isUrgent(task, now) ? "! " : "";
+  return `${mark}${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
 }
 
 /** 带子任务明细的多行展示：第一行是任务，缩进列出每个子任务的标题和完成状态。 */
@@ -42,9 +56,17 @@ export function taskDetails(task: Task, now: Date): string {
   if (due) {
     const days = dayDiff(due, now);
     const label = relativeDayLabel(due, now);
-    if (days < 0 && !task.done) details.push(`截止 ${label}，已逾期`);
-    else if (days === 0 && !task.done) details.push("今天到期");
-    else details.push(`截止 ${label}`);
+    const time = taskDueTime(task);
+    const moment = `${label}${time ? ` ${time}` : ""}`;
+    const overdue =
+      !task.done &&
+      (() => {
+        const deadline = deadlineMoment(due, time);
+        return deadline !== undefined && deadline.getTime() < now.getTime();
+      })();
+    if (overdue) details.push(`截止 ${moment}，已逾期`);
+    else if (days === 0 && !task.done) details.push(time ? `${moment} 到期` : "今天到期");
+    else details.push(`截止 ${moment}`);
   }
 
   const priority = taskPriority(task);

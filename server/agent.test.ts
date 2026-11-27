@@ -529,3 +529,83 @@ test("模型提示词里会带上最近的面板操作", () => {
   assert.match(systemPrompt(NOW), /删除了「开会」/);
   defaultActivity.clear();
 });
+
+test("记具体时刻时会保存 HH:mm，并从标题里去掉", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("今晚5点去拿快递");
+  const task = store.list()[0];
+
+  assert.equal(task?.title, "去拿快递");
+  assert.equal(task?.dueDate, "2026-11-26");
+  assert.equal(task?.dueTime, "17:00");
+  assert.match(reply, /17:00/);
+});
+
+test("中文时刻会换算成 24 小时制", async () => {
+  const { store, send } = fixture();
+
+  await send("明天上午10点半开会");
+  await send("下午三点交报告");
+
+  const [meeting, report] = store.list();
+  assert.equal(meeting?.title, "开会");
+  assert.equal(meeting?.dueDate, "2026-11-27");
+  assert.equal(meeting?.dueTime, "10:30");
+  assert.equal(report?.title, "交报告");
+  assert.equal(report?.dueDate, "2026-11-26");
+  assert.equal(report?.dueTime, "15:00");
+});
+
+test("只说时刻且今天已经过了时，顺延到明天", async () => {
+  const { store, send } = fixture();
+
+  await send("5点去拿快递");
+  const task = store.list()[0];
+
+  assert.equal(task?.dueDate, "2026-11-27");
+  assert.equal(task?.dueTime, "05:00");
+});
+
+test("离截止不到一天的任务前面带感叹号，远的任务不带", async () => {
+  const { store, send } = fixture();
+
+  await send("今晚5点拿快递");
+  await send("记一下下周一复盘");
+
+  const list = await send("看看我的待办");
+  const lines = list.split("\n");
+  const urgent = lines.find((line) => line.includes("拿快递"));
+  const later = lines.find((line) => line.includes("复盘"));
+
+  assert.match(urgent ?? "", /^! ○ 拿快递/);
+  assert.match(later ?? "", /^○ 复盘/);
+  assert.equal(store.list().length, 2);
+});
+
+test("模型工具也支持写具体时刻和清除时刻", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "xiaoming-tool-"));
+  tempDirs.push(dir);
+  const store = createJsonTaskStore(join(dir, "tasks.json"));
+
+  const created = runTool(
+    store,
+    "create_task",
+    {
+      title: "拿快递",
+      dueDate: "2026-11-26",
+      dueTime: "17:00",
+    },
+    NOW,
+  );
+  assert.equal(created.ok, true);
+  assert.equal(store.list()[0]?.dueTime, "17:00");
+
+  const updated = runTool(store, "update_task", { title: "拿快递", dueTime: "18:30" }, NOW);
+  assert.equal(updated.ok, true);
+  assert.equal(store.list()[0]?.dueTime, "18:30");
+
+  runTool(store, "update_task", { title: "拿快递", dueDate: "" }, NOW);
+  assert.equal(store.list()[0]?.dueDate, undefined);
+  assert.equal(store.list()[0]?.dueTime, undefined);
+});

@@ -25,6 +25,8 @@ export interface Task {
   done: boolean;
   note?: string;
   dueDate?: string;
+  /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
+  dueTime?: string;
   priority?: Priority;
   effort?: Effort;
   subtasks?: Subtask[];
@@ -36,11 +38,14 @@ const taskList = z.array(storedTask);
 
 const TITLE_MAX_LENGTH = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface NewTask {
   title: string;
   note?: string;
   dueDate?: string;
+  /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
+  dueTime?: string;
   priority?: Priority;
   effort?: Effort;
   subtasks?: string[];
@@ -52,6 +57,7 @@ export interface TaskPatch {
   done?: boolean;
   note?: string | null;
   dueDate?: string | null;
+  dueTime?: string | null;
   priority?: Priority | null;
   effort?: Effort | null;
   subtasks?: Subtask[] | null;
@@ -67,6 +73,14 @@ export interface TaskStore {
 
 export function isDateString(value: unknown): value is string {
   return typeof value === "string" && DATE_PATTERN.test(value);
+}
+
+export function isTimeString(value: unknown): value is string {
+  return typeof value === "string" && TIME_PATTERN.test(value);
+}
+
+export function taskDueTime(task: Task): string | undefined {
+  return isTimeString(task.dueTime) ? task.dueTime : undefined;
 }
 
 export function taskDueDate(task: Task): string | undefined {
@@ -135,6 +149,7 @@ export function createJsonTaskStore(filename: string): TaskStore {
     const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
     if (draft.note?.trim()) task.note = draft.note.trim();
     if (isDateString(draft.dueDate)) task.dueDate = draft.dueDate;
+    if (isDateString(draft.dueDate) && isTimeString(draft.dueTime)) task.dueTime = draft.dueTime;
     if (draft.priority) task.priority = draft.priority;
     if (draft.effort) task.effort = draft.effort;
 

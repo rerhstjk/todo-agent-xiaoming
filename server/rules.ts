@@ -6,7 +6,14 @@ import {
   formatActivityTime,
 } from "./activity.ts";
 import { execute, type Command, type CommandResult, type NewTaskInput } from "./commands.ts";
-import { findDateText, formatChineseDate, stripClockTime } from "./dates.ts";
+import {
+  addDays,
+  findClockTime,
+  findDateText,
+  formatChineseDate,
+  startOfDay,
+  toDateString,
+} from "./dates.ts";
 import { chatReply, createBatchChat } from "./replies.ts";
 import type { TaskScope } from "./selection.ts";
 import { type Effort, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
@@ -21,7 +28,14 @@ type Action = "complete" | "reopen" | "delete";
 
 type Intent =
   | { kind: "list"; scope: TaskScope }
-  | { kind: "create"; title: string; dueDate?: string; priority?: Priority; effort?: Effort }
+  | {
+      kind: "create";
+      title: string;
+      dueDate?: string;
+      dueTime?: string;
+      priority?: Priority;
+      effort?: Effort;
+    }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
   | { kind: "update"; hint: string; dueDate?: string; priority?: Priority }
@@ -246,6 +260,10 @@ export function parseIntent(text: string, now = new Date()): Intent {
 
   if (LIST_WORDS.test(value)) return { kind: "list", scope: listScope(value) };
 
+  // 没写「记一下」但带了具体时刻，通常是随口交代一件要做的事，
+  // 例如「今晚5点去拿快递」。确认不是查询后再当成新建任务。
+  if (findClockTime(value)) return createIntent(value, now);
+
   return { kind: "unknown" };
 }
 
@@ -266,11 +284,38 @@ function createIntent(text: string, now: Date): Intent {
   // 会被日期解析误认成「下下周」。
   let value = stripCreatePrefixes(text);
   let dueDate: string | undefined;
+  let dueTime: string | undefined;
+
+  // 先找具体时刻（下午三点 / 今晚5点 / 17:30），再找日期。
+  // 时刻里的“今晚/明晚”本身带天数信息，后面没有日期时用它兜底。
+  const clock = findClockTime(value);
+  if (clock) {
+    dueTime = clock.value;
+    value = value.replace(clock.matched, " ");
+  }
+
   const parsed = findDateText(value, now);
   if (parsed) {
     dueDate = parsed.value;
     value = value.replace(parsed.matched, " ");
     value = value.replace(/^\s*[在于]\s*(?=为|给|和|跟|与|把|做|去|来)/, " ");
+  } else if (clock) {
+    // 只说“今晚5点”就按今天；只说“5点”则在时刻已过时顺延到明天。
+    const offset = clock.day === "tomorrow" ? 1 : clock.day === "today" ? 0 : undefined;
+    if (offset !== undefined) {
+      dueDate = toDateString(addDays(startOfDay(now), offset));
+    } else {
+      const [hour, minute] = clock.value.split(":").map(Number);
+      const today = startOfDay(now);
+      const candidate = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
+        hour ?? 0,
+        minute ?? 0,
+      );
+      dueDate = toDateString(candidate.getTime() <= now.getTime() ? addDays(today, 1) : today);
+    }
   }
 
   let priority: Priority | undefined;
@@ -286,11 +331,10 @@ function createIntent(text: string, now: Date): Intent {
   }
 
   value = stripCreatePrefixes(value);
-  value = stripClockTime(value);
   value = cleanTitle(value);
   if (!value) return { kind: "empty" };
 
-  return { kind: "create", title: value.slice(0, 200), dueDate, priority, effort };
+  return { kind: "create", title: value.slice(0, 200), dueDate, dueTime, priority, effort };
 }
 
 function stripCreatePrefixes(value: string): string {
@@ -387,6 +431,7 @@ function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date):
     const input: NewTaskInput = {
       title: parsed.title,
       dueDate: parsed.dueDate,
+      dueTime: parsed.dueTime,
       priority: parsed.priority,
       effort: parsed.effort,
     };
@@ -440,6 +485,7 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
             input: {
               title: intent.title,
               dueDate: intent.dueDate,
+              dueTime: intent.dueTime,
               priority: intent.priority,
               effort: intent.effort,
             },

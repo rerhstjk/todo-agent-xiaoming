@@ -92,6 +92,8 @@ components:
         title: { $ref: "#/components/schemas/Title" }
         done: { type: boolean }
         dueDate: { type: string, description: 截止日期，YYYY-MM-DD }
+        dueTime:
+          { type: string, description: 截止时刻，HH:mm（24 小时制），只有 dueDate 存在时才有意义 }
         priority: { type: string, enum: [low, normal, high] }
         effort: { type: string, enum: [small, medium, large] }
         note: { type: string, description: 备注 }

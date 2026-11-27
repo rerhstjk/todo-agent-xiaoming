@@ -6,6 +6,7 @@ export type ApiTask = {
   done: boolean;
   note?: string;
   dueDate?: string;
+  dueTime?: string;
   priority?: "low" | "normal" | "high";
   effort?: "small" | "medium" | "large";
   subtasks?: { id: string; title: string; done: boolean }[];

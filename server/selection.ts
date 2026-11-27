@@ -1,5 +1,5 @@
-import { addDays, dayDiff, parseDateString, startOfDay, toDateString } from "./dates.ts";
-import { taskDueDate, type Task } from "./task-store.ts";
+import { addDays, deadlineMoment, startOfDay, toDateString } from "./dates.ts";
+import { taskDueDate, taskDueTime, type Task } from "./task-store.ts";
 
 /**
  * 清单的“查看范围”。规则引擎和模型工具都只表达这个枚举，
@@ -21,22 +21,27 @@ export function isTaskScope(value: unknown): value is TaskScope {
   return typeof value === "string" && (taskScopes as readonly string[]).includes(value);
 }
 
-/** 有截止日期的排在前面，同一天保持原有顺序。 */
+/** 有截止时间的排在前面：先按日期，再按当天时刻，没有日期的排在最后。 */
 export function sortByDue(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
-    const left = taskDueDate(a) ?? "9999-99-99";
-    const right = taskDueDate(b) ?? "9999-99-99";
-    return left.localeCompare(right);
+    const leftDate = taskDueDate(a) ?? "9999-99-99";
+    const rightDate = taskDueDate(b) ?? "9999-99-99";
+    if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
+    return (taskDueTime(a) ?? "23:59").localeCompare(taskDueTime(b) ?? "23:59");
   });
 }
 
+/** 已经超过截止时刻的未完成任务；无时刻的按当天 23:59 算。 */
+export function isOverdue(task: Task, now: Date): boolean {
+  if (task.done) return false;
+  const due = taskDueDate(task);
+  if (!due) return false;
+  const moment = deadlineMoment(due, taskDueTime(task));
+  return moment !== undefined && moment.getTime() < now.getTime();
+}
+
 export function overdueTasks(tasks: Task[], now: Date): Task[] {
-  return tasks.filter((task) => {
-    if (task.done) return false;
-    const due = taskDueDate(task);
-    if (!due || !parseDateString(due)) return false;
-    return dayDiff(due, now) < 0;
-  });
+  return tasks.filter((task) => isOverdue(task, now));
 }
 
 /** 指定某一天到期的任务（包含已完成的，便于展示当天结果）。 */

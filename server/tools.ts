@@ -1,7 +1,7 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
 import { execute } from "./commands.ts";
-import { findDateText, parseDateString, toDateString } from "./dates.ts";
+import { findClockTime, findDateText, parseDateString, toDateString } from "./dates.ts";
 import { toolReply } from "./replies.ts";
 import { taskScopes, type TaskScope } from "./selection.ts";
 import {
@@ -30,6 +30,11 @@ export const toolSchemas: ChatCompletionTool[] = [
           dueDate: {
             type: "string",
             description: "截止日期，格式 YYYY-MM-DD。用户没提到日期就不要传。",
+          },
+          dueTime: {
+            type: "string",
+            description:
+              "截止时刻，格式 HH:mm（24 小时制），例如 17:00。用户没提到具体时刻就不要传。",
           },
           priority: {
             type: "string",
@@ -89,6 +94,10 @@ export const toolSchemas: ChatCompletionTool[] = [
             type: "string",
             description: "新的截止日期 YYYY-MM-DD；传空字符串表示清除截止日期；不修改就不要传。",
           },
+          dueTime: {
+            type: "string",
+            description: "新的截止时刻 HH:mm；传空字符串表示清除时刻；不修改就不要传。",
+          },
           priority: {
             type: "string",
             enum: [...priorities, "none"],
@@ -145,6 +154,7 @@ export const toolSchemas: ChatCompletionTool[] = [
 const createArgs = z.object({
   title: z.string().trim().min(1).max(200),
   dueDate: z.string().optional(),
+  dueTime: z.string().optional(),
   priority: z.string().optional(),
   effort: z.string().optional(),
   note: z.string().optional(),
@@ -160,6 +170,7 @@ const updateArgs = z.object({
   newTitle: z.string().trim().min(1).max(200).optional(),
   done: z.boolean().optional(),
   dueDate: z.string().optional(),
+  dueTime: z.string().optional(),
   priority: z.string().optional(),
   effort: z.string().optional(),
   note: z.string().optional(),
@@ -201,6 +212,7 @@ export function runTool(
             input: {
               title: args.title,
               dueDate: normalizeDueDate(args.dueDate, now),
+              dueTime: normalizeDueTime(args.dueTime),
               priority: parsePriority(args.priority) ?? undefined,
               effort: parseEffort(args.effort) ?? undefined,
               note: args.note?.trim() || undefined,
@@ -224,8 +236,10 @@ export function runTool(
 
         if (args.dueDate !== undefined) {
           const value = args.dueDate.trim();
-          if (!value) patch.dueDate = null;
-          else {
+          if (!value) {
+            patch.dueDate = null;
+            patch.dueTime = null;
+          } else {
             const dueDate = normalizeDueDate(value, now);
             if (!dueDate) {
               return {
@@ -235,6 +249,22 @@ export function runTool(
               };
             }
             patch.dueDate = dueDate;
+          }
+        }
+
+        if (args.dueTime !== undefined) {
+          const value = args.dueTime.trim();
+          if (!value) patch.dueTime = null;
+          else {
+            const dueTime = normalizeDueTime(value);
+            if (!dueTime) {
+              return {
+                ok: false,
+                changed: false,
+                message: `无法识别时刻「${args.dueTime}」，请用 HH:mm 格式。`,
+              };
+            }
+            patch.dueTime = dueTime;
           }
         }
 
@@ -278,6 +308,19 @@ export function runTool(
       message: error instanceof Error ? error.message : "工具执行失败，请稍后重试。",
     };
   }
+}
+
+function normalizeDueTime(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+  const direct = /^(\d{1,2}):(\d{2})$/.exec(trimmed);
+  if (direct) {
+    const hour = Number(direct[1]);
+    const minute = Number(direct[2]);
+    if (hour > 23 || minute > 59) return undefined;
+    return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+  }
+  return findClockTime(trimmed)?.value;
 }
 
 function normalizeDueDate(value: string | undefined, now: Date): string | undefined {
