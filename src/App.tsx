@@ -18,6 +18,7 @@ import {
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
+import { suggestions } from "./suggestions.ts";
 import { useSpeechInput } from "./use-speech.ts";
 
 function isSendShortcut(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -194,6 +195,20 @@ export default function App() {
         <section className="chat">
           <ChatHistory messages={messages} pending={pending} onSelectPrompt={send} />
           <div className="compose">
+            <div className="suggestions" aria-label="预设提示词">
+              {suggestions.map((item) => (
+                <button
+                  key={item.text}
+                  type="button"
+                  className="suggestion"
+                  title={item.text}
+                  disabled={pending}
+                  onClick={() => void send(item.text)}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
             {error && (
               <p className="error" role="alert">
                 {error}

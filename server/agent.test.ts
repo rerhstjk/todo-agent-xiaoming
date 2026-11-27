@@ -511,6 +511,17 @@ test("能回答刚才在面板上做了什么", async () => {
   defaultActivity.clear();
 });
 
+test("「刚才在面板上做了什么」也能识别", async () => {
+  defaultActivity.clear();
+  const { send } = fixture();
+  defaultActivity.record({ kind: "created", title: "写周报" });
+
+  const reply = await send("刚才在面板上做了什么？");
+
+  assert.match(reply, /新建了「写周报」/);
+  defaultActivity.clear();
+});
+
 test("面板删掉的任务再被提起时，说明是面板删除而不是凭空消失", async () => {
   defaultActivity.clear();
   const { send } = fixture();

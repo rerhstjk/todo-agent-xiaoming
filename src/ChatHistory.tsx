@@ -1,12 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
-
-const examplePrompts = [
-  "提醒我买牛奶",
-  "看看我的待办",
-  "今天有哪些任务到期？",
-  "这周还有什么要做的？",
-];
+import { welcomePrompts } from "./suggestions.ts";
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
@@ -28,7 +22,7 @@ export function ChatHistory({ messages, pending, onSelectPrompt }: ChatHistoryPr
           <h1>小明智能体</h1>
           <p>用中文说就行：记任务、报进度、问今天或本周的安排。</p>
           <div className="examples">
-            {examplePrompts.map((prompt) => (
+            {welcomePrompts.map((prompt) => (
               <button key={prompt} onClick={() => onSelectPrompt(prompt)}>
                 {prompt}
                 <span aria-hidden="true">↗</span>
