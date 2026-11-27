@@ -2,6 +2,7 @@ import { addDays, formatShortChineseDate, relativeDayLabel } from "./dates.ts";
 import {
   EFFORT_LABELS,
   PRIORITY_LABELS,
+  formatTaskLine,
   formatTaskList,
   pendingSummary,
   taskDetails,
@@ -116,6 +117,61 @@ function createTool(result: CommandResult, now: Date): { message: string; data?:
     lines.push(`清单里本来就有一条同名的未完成任务「${result.duplicate.title}」。`);
   }
   return { message: lines.join(" "), data: task ? toPublicTask(task) : undefined };
+}
+
+/** 一句话拆成多个动作时的汇总回复（新增若干任务，或给刚建的任务加子任务）。 */
+export function createBatchChat(results: CommandResult[], now = new Date()): string {
+  const created = results.flatMap((result) =>
+    result.command.kind === "create" && result.task ? [result.task] : [],
+  );
+  const tasks = results.at(-1)?.tasks ?? [];
+  const lines: string[] = [];
+
+  if (created.length === 1) {
+    const task = created[0]!;
+    lines.push(`已记下「${task.title}」${taskDetails(task, now)}。`);
+  } else if (created.length > 1) {
+    lines.push(
+      `已记下 ${created.length} 条任务：`,
+      ...created.map((task) => formatTaskLine(task, now)),
+    );
+  }
+
+  const addedSubtasks = results.filter(
+    (result) =>
+      result.command.kind === "subtask" &&
+      result.command.action === "add" &&
+      result.status === "ok",
+  );
+  for (const result of addedSubtasks) {
+    const parent = result.task?.title ?? "";
+    const name = result.subtask?.title ?? "";
+    if (parent && name) lines.push(`并给「${parent}」加了子任务「${name}」。`);
+  }
+
+  const failedSubtasks = results.filter(
+    (result) =>
+      result.command.kind === "subtask" &&
+      result.command.action === "add" &&
+      result.status !== "ok",
+  );
+  for (const result of failedSubtasks) {
+    const name = result.command.kind === "subtask" ? result.command.subtask : "";
+    if (result.status === "ambiguous") {
+      lines.push(
+        `子任务「${name}」没有加进去：清单里有多条「${result.hint ?? ""}」，说清楚是哪一条我再补上。`,
+      );
+    } else {
+      lines.push(`子任务「${name}」没有加进去，稍后再说一次任务名试试。`);
+    }
+  }
+
+  if (lines.length === 0) return "这次没有记下可用的任务，可以换成「记一下买牛奶」这样的说法。";
+  lines.push(pendingSummary(tasks));
+  if (results.some((result) => result.duplicate)) {
+    lines.push("其中有的和清单里已有的未完成任务同名，需要的话可以删掉重复的。");
+  }
+  return lines.join("\n");
 }
 
 function pendingLine(tasks: Task[], created: Task): string {

@@ -1,7 +1,7 @@
 import type { ChatMessage } from "../shared/chat.ts";
-import { execute, type Command } from "./commands.ts";
+import { execute, type Command, type CommandResult, type NewTaskInput } from "./commands.ts";
 import { findDateText, formatChineseDate, stripClockTime } from "./dates.ts";
-import { chatReply } from "./replies.ts";
+import { chatReply, createBatchChat } from "./replies.ts";
 import type { TaskScope } from "./selection.ts";
 import { type Effort, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
@@ -37,6 +37,12 @@ const REOPEN_WORDS = /(重新打开|重新开始|取消完成|恢复|还没做�
 const DELETE_WORDS = /(删掉|删除|删了|删去|去掉|移除|不要了|不做了)/;
 const CLEAR_DONE_WORDS =
   /(删掉|删除|清空|清理|移除|去掉|清除)(掉)?(所有|全部)?(已经)?(已完成|完成的|做完的|搞定的)/;
+
+/** 一句话里的多个动作：逗号/分号分隔，后一个分句以「并 / 然后 / 再」等开头。 */
+const CLAUSE_SEPARATOR = /[，,；;]\s*/;
+const CLAUSE_CONNECTOR = /^(?:并且|并|同时|然后|另外|还要|还需|顺便|以及|再|接着)\s*/;
+/** “子任务：整理数据”“加子任务：准备材料”。 */
+const SUBTASK_CLAUSE = /^(?:加|添加|新增|记)?\s*(?:一个|一条|个)?\s*子任务\s*[:：]\s*(.+)$/;
 
 const CREATE_PREFIXES = [
   /^(请|麻烦你|麻烦|帮我|帮忙|给我|再|顺便|另外|然后|那个|这条|那条)/,
@@ -237,6 +243,7 @@ function createIntent(text: string, now: Date): Intent {
   if (parsed) {
     dueDate = parsed.value;
     value = value.replace(parsed.matched, " ");
+    value = value.replace(/^\s*[在于]\s*(?=为|给|和|跟|与|把|做|去|来)/, " ");
   }
 
   let priority: Priority | undefined;
@@ -289,15 +296,102 @@ function extractHint(text: string, verbs: string[]): string {
   return cleanTitle(value.replace(/\s+/g, " "));
 }
 
+interface CreateClause {
+  kind: "task" | "subtask";
+  text: string;
+}
+
+/**
+ * 把「提醒我明天开会，并在今天为明天的会议准备材料」这样的整句拆成两件事。
+ * 只在后一个分句以「并 / 然后 / 再 / 同时 / 另外 / 顺便」开头，
+ * 或者本身又是一条「记一下…」时才拆，避免把「周五开会，讨论预算」误拆成两条。
+ */
+function splitCreateClauses(text: string): CreateClause[] | undefined {
+  const parts = text
+    .split(CLAUSE_SEPARATOR)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length < 2) return undefined;
+
+  const clauses: CreateClause[] = [{ kind: "task", text: parts[0]! }];
+  for (const raw of parts.slice(1)) {
+    if (/^(或者|还是|或是)/.test(raw)) return undefined;
+    const rest = raw.replace(CLAUSE_CONNECTOR, "").trim();
+    const subtask = SUBTASK_CLAUSE.exec(rest);
+    if (subtask) {
+      const text = subtask[1]!.trim();
+      if (text.length < 2) return undefined;
+      clauses.push({ kind: "subtask", text });
+      continue;
+    }
+    const linked = CLAUSE_CONNECTOR.test(raw) || CREATE_WORDS.test(raw);
+    if (!linked || rest.length < 2) return undefined;
+    clauses.push({ kind: "task", text: rest });
+  }
+  return clauses;
+}
+
+/** 依次执行拆出来的多个动作：建任务、给刚建的任务加子任务，再统一回复。 */
+function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date): string {
+  const results: CommandResult[] = [];
+  let previous: { id: string; title: string } | undefined;
+
+  for (const clause of clauses) {
+    if (clause.kind === "subtask") {
+      if (!previous) continue;
+      results.push(
+        execute(
+          store,
+          {
+            kind: "subtask",
+            hint: previous.title,
+            action: "add",
+            subtask: clause.text,
+            taskId: previous.id,
+          },
+          now,
+        ),
+      );
+      continue;
+    }
+
+    const parsed = createIntent(clause.text, now);
+    if (parsed.kind !== "create") continue;
+    const input: NewTaskInput = {
+      title: parsed.title,
+      dueDate: parsed.dueDate,
+      priority: parsed.priority,
+      effort: parsed.effort,
+    };
+    const result = execute(store, { kind: "create", input }, now);
+    results.push(result);
+    if (result.task) previous = { id: result.task.id, title: result.task.title };
+  }
+
+  if (results.length === 0) {
+    return "这句我没有拆出可用的任务，可以换成「记一下买牛奶」这样的说法。";
+  }
+  return createBatchChat(results, now);
+}
+
 export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new Date()): string {
   const choice = followUpChoice(messages);
   if (choice) return chatReply(execute(store, choice, now), now);
 
   const text = messages.at(-1)?.content ?? "";
+
+  // 先看是不是一句话里说了几件事。必须在 parseIntent 之前判断：
+  // 「提醒我明天开会，并加子任务：准备材料」会被子任务正则整句命中，
+  // 从而漏掉前半句的建任务动作。
+  const clauses = splitCreateClauses(text);
+  if (clauses && clauses.length > 1 && CREATE_WORDS.test(clauses[0]!.text)) {
+    return runCreateClauses(store, clauses, now);
+  }
+
   const intent = parseIntent(text, now);
 
   switch (intent.kind) {
-    case "create":
+    case "create": {
       return chatReply(
         execute(
           store,
@@ -314,6 +408,7 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
         ),
         now,
       );
+    }
     case "list":
       return chatReply(execute(store, { kind: "list", scope: intent.scope }, now), now);
     case "action": {

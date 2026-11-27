@@ -33,7 +33,8 @@ export type Command =
   | { kind: "remove"; hint: string }
   | { kind: "rename"; hint: string; title: string }
   | { kind: "update"; hint: string; patch: TaskPatch }
-  | { kind: "subtask"; hint: string; action: SubtaskAction; subtask: string }
+  /** 带 taskId 时直接按 id 定位，避免同名的多条任务产生歧义。 */
+  | { kind: "subtask"; hint: string; action: SubtaskAction; subtask: string; taskId?: string }
   | { kind: "clearDone" };
 
 export type ResultStatus = "ok" | "unchanged" | "missing" | "ambiguous" | "invalid";
@@ -216,7 +217,8 @@ function update(store: TaskStore, command: Extract<Command, { kind: "update" }>)
 
 function subtask(store: TaskStore, command: Extract<Command, { kind: "subtask" }>): CommandResult {
   const tasks = store.list();
-  const located = locate(command, tasks);
+  const known = command.taskId ? store.get(command.taskId) : undefined;
+  const located = known ? { task: known } : locate(command, tasks);
   if ("failed" in located) return located.failed;
   const task = located.task;
   const current = taskSubtasks(task);

@@ -419,3 +419,41 @@ test("「删掉所有已完成的任务」清理的是已完成，不会当成�
     ["取快递"],
   );
 });
+
+test("一句话里的两件事会拆成两条任务，各自的日期都保留", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("提醒我明天开会，并在今天为明天的会议准备材料");
+
+  assert.equal(store.list().length, 2);
+  const meeting = store.list().find((task) => task.title === "开会");
+  assert.equal(meeting?.dueDate, "2026-11-27");
+  const prepare = store.list().find((task) => task.title.includes("准备材料"));
+  assert.equal(prepare?.dueDate, "2026-11-26");
+  assert.match(reply, /已记下 2 条任务/);
+  assert.doesNotMatch(reply, /开会，并在今天/);
+});
+
+test("「子任务：…」会把后一件事挂到刚建的任务下", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("提醒我周五开会，子任务：准备材料");
+
+  assert.equal(store.list().length, 1);
+  const task = store.list()[0]!;
+  assert.equal(task.title, "开会");
+  assert.deepEqual(
+    (task.subtasks ?? []).map((subtask) => subtask.title),
+    ["准备材料"],
+  );
+  assert.match(reply, /并给「开会」加了子任务「准备材料」/);
+});
+
+test("没有连接词的分句不会误拆成两条任务", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下周五开会，讨论预算");
+
+  assert.equal(store.list().length, 1);
+  assert.equal(store.list()[0]?.title, "开会，讨论预算");
+});
