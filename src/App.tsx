@@ -201,9 +201,17 @@ export default function App() {
                   key={item.text}
                   type="button"
                   className="suggestion"
-                  title={item.text}
+                  title={`${item.text}（点一下填进输入框，可以再改）`}
                   disabled={pending}
-                  onClick={() => void send(item.text)}
+                  onClick={() => {
+                    setDraft(item.text);
+                    requestAnimationFrame(() => {
+                      const field = input.current;
+                      if (!field) return;
+                      field.focus();
+                      field.setSelectionRange(field.value.length, field.value.length);
+                    });
+                  }}
                 >
                   {item.label}
                 </button>
