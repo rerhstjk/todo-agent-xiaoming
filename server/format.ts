@@ -26,6 +26,15 @@ export function formatTaskLine(task: Task, now = new Date()): string {
   return `${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
 }
 
+/** 带子任务明细的多行展示：第一行是任务，缩进列出每个子任务的标题和完成状态。 */
+export function formatTaskBlock(task: Task, now = new Date()): string {
+  const line = formatTaskLine(task, now);
+  const subtasks = taskSubtasks(task);
+  if (subtasks.length === 0) return line;
+  const detail = subtasks.map((subtask) => `　　${subtask.done ? "✓" : "○"} ${subtask.title}`);
+  return [line, ...detail].join("\n");
+}
+
 /** 任务标题后面的补充信息，例如“（截止 明天 · 高优先级 · 子任务 1/2）”。 */
 export function taskDetails(task: Task, now: Date): string {
   const details: string[] = [];
@@ -72,11 +81,12 @@ export function formatTaskList(tasks: Task[], options: ListOptions = {}): string
 
   const heading = options.heading ?? summarize(tasks);
   const limit = options.limit ?? 20;
-  const visible = tasks.slice(0, limit).map((task) => formatTaskLine(task, now));
+  const visible = tasks.slice(0, limit).map((task) => formatTaskBlock(task, now));
+  const lines = visible.flatMap((block) => block.split("\n"));
   if (tasks.length > visible.length) {
-    visible.push(`……还有 ${tasks.length - visible.length} 项没有显示。`);
+    lines.push(`……还有 ${tasks.length - visible.length} 项没有显示。`);
   }
-  return [heading, ...visible].join("\n");
+  return [heading, ...lines].join("\n");
 }
 
 /** “清单里共有 2 项任务（1 项待办、1 项已完成）：” */

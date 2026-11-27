@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
-import { requestReply, fetchTasks, setTaskDone, deleteTask, type ApiTask } from "./chat-client.ts";
+import {
+  requestReply,
+  fetchTasks,
+  setTaskDone,
+  updateSubtasks,
+  deleteTask,
+  type ApiTask,
+} from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
 
@@ -73,6 +80,23 @@ export default function App() {
     }
   }
 
+  async function toggleSubtask(task: ApiTask, subtaskId: string) {
+    const subtasks = (task.subtasks ?? []).map((item) =>
+      item.id === subtaskId ? { ...item, done: !item.done } : item,
+    );
+    setTasks((current) =>
+      current.map((item) => (item.id === task.id ? { ...item, subtasks } : item)),
+    );
+    try {
+      await updateSubtasks(task.id, subtasks);
+      setTasksError("");
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "更新子任务失败。");
+    } finally {
+      void refreshTasks();
+    }
+  }
+
   async function removeTask(task: ApiTask) {
     setTasks((current) => current.filter((item) => item.id !== task.id));
     try {
@@ -134,6 +158,7 @@ export default function App() {
           loading={tasksLoading}
           error={tasksError}
           onToggle={toggleTask}
+          onToggleSubtask={toggleSubtask}
           onDelete={removeTask}
           onRefresh={refreshTasks}
         />

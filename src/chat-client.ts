@@ -55,6 +55,18 @@ export function setTaskDone(id: string, done: boolean): Promise<ApiTask> {
   });
 }
 
+/** 前端勾选子任务时整组回写，返回值是服务端更新后的任务。 */
+export function updateSubtasks(
+  id: string,
+  subtasks: NonNullable<ApiTask["subtasks"]>,
+): Promise<ApiTask> {
+  return request<ApiTask>(`/api/tasks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ subtasks }),
+  });
+}
+
 export function deleteTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

@@ -3,9 +3,18 @@ import { z } from "zod";
 import type { TaskStore } from "./task-store.ts";
 
 const createTaskSchema = z.strictObject({ title: z.string().trim().min(1).max(200) });
+const subtaskSchema = z.strictObject({
+  id: z.string().min(1),
+  title: z.string().trim().min(1).max(200),
+  done: z.boolean(),
+});
 const updateTaskSchema = createTaskSchema
   .partial()
-  .extend({ done: z.boolean().optional() })
+  .extend({
+    done: z.boolean().optional(),
+    // 前端清单面板勾选子任务时，整组子任务一起回写。
+    subtasks: z.array(subtaskSchema).max(50).optional(),
+  })
   .refine((changes) => Object.keys(changes).length > 0);
 
 const taskNotFound = { error: "找不到这条任务。" };
@@ -28,7 +37,7 @@ export function taskRouter(tasks: TaskStore) {
   router.patch("/:id", (req, res) => {
     const input = updateTaskSchema.safeParse(req.body);
     if (!input.success) {
-      return res.status(400).json({ error: "请提供有效的 title 或 done 字段。" });
+      return res.status(400).json({ error: "请提供有效的 title、done 或 subtasks 字段。" });
     }
 
     const updated = tasks.update(req.params.id, input.data);

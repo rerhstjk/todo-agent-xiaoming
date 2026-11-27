@@ -96,3 +96,37 @@ test("聊天 API 只将有效的完整对话传给智能体，并返回其回复
   assert.equal(invalid.status, 400);
   assert.deepEqual(conversations, [messages]);
 });
+
+test("清单面板可以整组回写子任务的完成状态", async (t) => {
+  const { request, filename } = await startTestApp(t);
+  const task = {
+    id: "a",
+    title: "开会",
+    done: false,
+    subtasks: [
+      { id: "s1", title: "准备材料", done: false },
+      { id: "s2", title: "打印资料", done: true },
+    ],
+  };
+  await writeFile(filename, JSON.stringify([task]));
+
+  const patched = await request("PATCH", "/api/tasks/a", {
+    subtasks: [
+      { id: "s1", title: "准备材料", done: true },
+      { id: "s2", title: "打印资料", done: true },
+    ],
+  });
+  assert.equal(patched.status, 200);
+  assert.deepEqual(createJsonTaskStore(filename).list(), [
+    {
+      ...task,
+      subtasks: [
+        { id: "s1", title: "准备材料", done: true },
+        { id: "s2", title: "打印资料", done: true },
+      ],
+    },
+  ]);
+
+  const invalid = await request("PATCH", "/api/tasks/a", { subtasks: [{ id: "x" }] });
+  assert.equal(invalid.status, 400);
+});

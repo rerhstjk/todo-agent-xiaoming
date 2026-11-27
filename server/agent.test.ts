@@ -449,6 +449,17 @@ test("「子任务：…」会把后一件事挂到刚建的任务下", async ()
   assert.match(reply, /并给「开会」加了子任务「准备材料」/);
 });
 
+test("清单回复会列出每个子任务的标题和完成状态", async () => {
+  const { send } = fixture();
+
+  await send("提醒我周五开会，子任务：准备材料");
+  await send("记一下取快递");
+  const listed = await send("我有哪些任务？");
+
+  assert.match(listed, /○ 开会/);
+  assert.match(listed, /○ 准备材料/);
+});
+
 test("没有连接词的分句不会误拆成两条任务", async () => {
   const { store, send } = fixture();
 

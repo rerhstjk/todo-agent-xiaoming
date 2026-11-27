@@ -2,7 +2,7 @@ import { addDays, formatShortChineseDate, relativeDayLabel } from "./dates.ts";
 import {
   EFFORT_LABELS,
   PRIORITY_LABELS,
-  formatTaskLine,
+  formatTaskBlock,
   formatTaskList,
   pendingSummary,
   taskDetails,
@@ -133,7 +133,7 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
   } else if (created.length > 1) {
     lines.push(
       `已记下 ${created.length} 条任务：`,
-      ...created.map((task) => formatTaskLine(task, now)),
+      ...created.flatMap((task) => formatTaskBlock(task, now).split("\n")),
     );
   }
 

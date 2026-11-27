@@ -45,7 +45,7 @@ paths:
         schema: { type: string }
     patch:
       operationId: updateTask
-      summary: 修改标题或完成状态
+      summary: 修改标题、完成状态或子任务
       requestBody:
         required: true
         content:
@@ -57,6 +57,10 @@ paths:
               properties:
                 title: { $ref: "#/components/schemas/Title" }
                 done: { type: boolean }
+                subtasks:
+                  type: array
+                  description: 整组子任务（用于前端清单面板勾选子任务），最多 50 条
+                  items: { $ref: "#/components/schemas/Subtask" }
       responses:
         "200":
           description: 更新后的任务
@@ -94,13 +98,14 @@ components:
         subtasks:
           type: array
           description: 子任务列表
-          items:
-            type: object
-            required: [id, title, done]
-            properties:
-              id: { type: string }
-              title: { type: string }
-              done: { type: boolean }
+          items: { $ref: "#/components/schemas/Subtask" }
+    Subtask:
+      type: object
+      required: [id, title, done]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        done: { type: boolean }
     Error:
       type: object
       required: [error]

@@ -312,6 +312,41 @@ textarea {
   font-size: 12px;
   color: #6b788c;
 }
+.subtask-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.panel-list .subtask-list li {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  gap: 6px;
+  align-items: baseline;
+  background: transparent;
+}
+.panel-list .subtask-list li:hover {
+  border: 0;
+}
+.subtask-check {
+  border: 0;
+  background: transparent;
+  color: #103ae1;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0;
+}
+.subtask-title {
+  font-size: 12px;
+  color: #55627a;
+  overflow-wrap: anywhere;
+}
+.subtask-list li.done .subtask-title {
+  color: #9aa4b6;
+  text-decoration: line-through;
+}
 .task-meta em {
   font-style: normal;
   color: #b03a2c;

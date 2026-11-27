@@ -69,6 +69,7 @@ export function TaskPanel({
   loading,
   error,
   onToggle,
+  onToggleSubtask,
   onDelete,
   onRefresh,
 }: {
@@ -76,6 +77,7 @@ export function TaskPanel({
   loading: boolean;
   error: string;
   onToggle: (task: ApiTask) => void;
+  onToggleSubtask: (task: ApiTask, subtaskId: string) => void;
   onDelete: (task: ApiTask) => void;
   onRefresh: () => void;
 }) {
@@ -189,6 +191,27 @@ export function TaskPanel({
                       </span>
                     )}
                   </span>
+                  {subtasks.length > 0 && (
+                    <ul className="subtask-list">
+                      {subtasks.map((subtask) => (
+                        <li key={subtask.id} className={subtask.done ? "done" : ""}>
+                          <button
+                            className="subtask-check"
+                            aria-label={
+                              subtask.done
+                                ? `把子任务「${subtask.title}」重新打开`
+                                : `完成子任务「${subtask.title}」`
+                            }
+                            aria-pressed={subtask.done}
+                            onClick={() => onToggleSubtask(task, subtask.id)}
+                          >
+                            {subtask.done ? "✓" : "○"}
+                          </button>
+                          <span className="subtask-title">{subtask.title}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
                 <button
                   className="delete"
