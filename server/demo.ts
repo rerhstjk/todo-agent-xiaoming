@@ -9,7 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ChatMessage } from "../shared/chat.ts";
 import { createReply } from "./agent.ts";
-import { buildTaskListReply } from "./format.ts";
+import { execute } from "./commands.ts";
+import { chatReply } from "./replies.ts";
 import { createJsonTaskStore } from "./task-store.ts";
 
 const directory = mkdtempSync(join(tmpdir(), "xiaoming-demo-"));
@@ -42,10 +43,11 @@ try {
   await say("给交报告加一个子任务：整理数据");
   await say("交报告的子任务整理数据完成了");
   await say("今天有哪些任务到期？");
-  await say("我有哪些任务？");
+  await say("这周还有什么要做的？");
+  await say("明天有哪些任务？");
 
   console.log("── 最终清单（data 里实际保存的内容）──\n");
-  console.log(buildTaskListReply(store.list(), "all", now));
+  console.log(chatReply(execute(store, { kind: "list", scope: "all" }, now), now));
   console.log(`\n清单文件：${join(directory, "tasks.json")}`);
 } finally {
   rmSync(directory, { recursive: true, force: true });

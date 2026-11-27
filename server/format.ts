@@ -1,10 +1,4 @@
-import {
-  dayDiff,
-  formatShortChineseDate,
-  parseDateString,
-  relativeDayLabel,
-  toDateString,
-} from "./dates.ts";
+import { dayDiff, relativeDayLabel } from "./dates.ts";
 import {
   taskDueDate,
   taskEffort,
@@ -27,14 +21,13 @@ export const EFFORT_LABELS: Record<Effort, string> = {
   large: "大",
 };
 
-export type TaskListScope = "all" | "open" | "done" | "today" | "overdue";
-
 /** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行。 */
 export function formatTaskLine(task: Task, now = new Date()): string {
-  return `${task.done ? "✓" : "○"} ${task.title}${describeTaskMeta(task, now)}`;
+  return `${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
 }
 
-function describeTaskMeta(task: Task, now: Date): string {
+/** 任务标题后面的补充信息，例如“（截止 明天 · 高优先级 · 子任务 1/2）”。 */
+export function taskDetails(task: Task, now: Date): string {
   const details: string[] = [];
   const due = taskDueDate(task);
   if (due) {
@@ -104,78 +97,4 @@ export function pendingSummary(tasks: Task[]): string {
   }
   if (open.length > 5) return `还剩 ${open.length} 项待办。`;
   return `还有 ${open.length} 项待办：${open.map((task) => `「${task.title}」`).join("、")}。`;
-}
-
-/** “今天到期”的清单。 */
-export function dueOn(tasks: Task[], now: Date): Task[] {
-  const today = toDateString(now);
-  return tasks.filter((task) => taskDueDate(task) === today);
-}
-
-export function sortByDue(tasks: Task[]): Task[] {
-  return [...tasks].sort((a, b) => {
-    const left = taskDueDate(a) ?? "9999-99-99";
-    const right = taskDueDate(b) ?? "9999-99-99";
-    return left.localeCompare(right);
-  });
-}
-
-export function overdueTasks(tasks: Task[], now: Date): Task[] {
-  return tasks.filter((task) => {
-    if (task.done) return false;
-    const due = taskDueDate(task);
-    if (!due || !parseDateString(due)) return false;
-    return dayDiff(due, now) < 0;
-  });
-}
-
-/** 按“查看范围”生成清单回复，规则引擎和模型工具共用同一套文案。 */
-export function buildTaskListReply(tasks: Task[], scope: TaskListScope, now: Date): string {
-  if (tasks.length === 0) {
-    return "清单还是空的。跟我说「记一下买牛奶」就能添加第一条任务。";
-  }
-
-  const open = sortByDue(tasks.filter((task) => !task.done));
-  const done = tasks.filter((task) => task.done);
-  const overdue = overdueTasks(tasks, now);
-  const overdueNames = overdue.map((task) => `「${task.title}」`).join("、");
-
-  if (scope === "today") {
-    const due = dueOn(tasks, now);
-    if (due.length === 0) {
-      const extra =
-        overdue.length > 0 ? `另有 ${overdue.length} 项已经逾期：${overdueNames}。` : "";
-      return `今天（${formatShortChineseDate(now)}）没有到期的任务。${extra}`;
-    }
-    const lines = [
-      formatTaskList(due, {
-        heading: `今天（${formatShortChineseDate(now)}）有 ${due.length} 项任务到期：`,
-        now,
-      }),
-    ];
-    if (overdue.length > 0) lines.push(`另有 ${overdue.length} 项已经逾期：${overdueNames}。`);
-    return lines.join("\n");
-  }
-
-  if (scope === "overdue") {
-    return overdue.length > 0
-      ? formatTaskList(overdue, { heading: `有 ${overdue.length} 项任务已经逾期：`, now })
-      : "没有逾期的任务，节奏保持得不错。";
-  }
-
-  if (scope === "open") {
-    return open.length > 0
-      ? formatTaskList(open, { heading: `还有 ${open.length} 项待办：`, now })
-      : "清单里没有待办了，全部完成。";
-  }
-
-  if (scope === "done") {
-    return done.length > 0
-      ? formatTaskList(done, { heading: `已完成 ${done.length} 项：`, now })
-      : "还没有已完成的任务。";
-  }
-
-  const lines = [formatTaskList([...open, ...done], { now })];
-  if (overdue.length > 0) lines.push(`注意：其中 ${overdue.length} 项已经逾期。`);
-  return lines.join("\n");
 }

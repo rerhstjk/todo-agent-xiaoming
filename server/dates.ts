@@ -104,10 +104,12 @@ export function findDateText(text: string, now = new Date()): ParsedDate | undef
     }
   }
 
-  const relative = /(大后天|后天|明天|明日|今天|今日)/.exec(text);
+  const relative = /(大后天|昨天|前天|后天|明天|明日|今天|今日)/.exec(text);
   if (relative) {
     const offsets: Record<string, number> = {
       大后天: 3,
+      昨天: -1,
+      前天: -2,
       后天: 2,
       明天: 1,
       明日: 1,

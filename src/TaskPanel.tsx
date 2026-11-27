@@ -53,6 +53,17 @@ function compareTasks(a: ApiTask, b: ApiTask): number {
   return 0;
 }
 
+type Filter = "open" | "today" | "week" | "overdue" | "done";
+
+/** 本周的最后一天（周日）。 */
+function endOfWeek(): string {
+  const date = new Date();
+  const weekday = date.getDay();
+  const end = new Date(date);
+  end.setDate(date.getDate() + (weekday === 0 ? 0 : 7 - weekday));
+  return toDateString(end);
+}
+
 export function TaskPanel({
   tasks,
   loading,
@@ -68,11 +79,45 @@ export function TaskPanel({
   onDelete: (task: ApiTask) => void;
   onRefresh: () => void;
 }) {
-  const [filter, setFilter] = useState<"open" | "done">("open");
+  const [filter, setFilter] = useState<Filter>("open");
   const today = toDateString(new Date());
+  const weekEnd = endOfWeek();
   const open = tasks.filter((task) => !task.done).sort(compareTasks);
   const done = tasks.filter((task) => task.done).sort(compareTasks);
-  const visible = filter === "done" ? done : open;
+  const todayTasks = tasks.filter((task) => task.dueDate === today).sort(compareTasks);
+  const weekTasks = tasks
+    .filter(
+      (task) => !task.done && task.dueDate && task.dueDate >= today && task.dueDate <= weekEnd,
+    )
+    .sort(compareTasks);
+  const overdueTasks = tasks.filter((task) => isOverdue(task, today)).sort(compareTasks);
+  const counts: Record<Filter, number> = {
+    open: open.length,
+    today: todayTasks.length,
+    week: weekTasks.length,
+    overdue: overdueTasks.length,
+    done: done.length,
+  };
+  const visible =
+    filter === "done"
+      ? done
+      : filter === "today"
+        ? todayTasks
+        : filter === "week"
+          ? weekTasks
+          : filter === "overdue"
+            ? overdueTasks
+            : open;
+  const emptyText =
+    filter === "done"
+      ? "还没有完成的任务。"
+      : filter === "today"
+        ? "今天没有到期的任务。"
+        : filter === "week"
+          ? "本周剩下的时间没有到期的任务。"
+          : filter === "overdue"
+            ? "没有逾期的任务，节奏保持得不错。"
+            : "清单是空的，跟小明说一声就行。";
 
   return (
     <aside className="panel" aria-label="待办清单">
@@ -83,22 +128,25 @@ export function TaskPanel({
         </button>
       </div>
       <div className="panel-tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={filter === "open"}
-          className={filter === "open" ? "active" : ""}
-          onClick={() => setFilter("open")}
-        >
-          待办 {open.length}
-        </button>
-        <button
-          role="tab"
-          aria-selected={filter === "done"}
-          className={filter === "done" ? "active" : ""}
-          onClick={() => setFilter("done")}
-        >
-          已完成 {done.length}
-        </button>
+        {(
+          [
+            ["open", "待办"],
+            ["today", "今天"],
+            ["week", "本周"],
+            ["overdue", "逾期"],
+            ["done", "已完成"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            role="tab"
+            aria-selected={filter === value}
+            className={filter === value ? "active" : ""}
+            onClick={() => setFilter(value)}
+          >
+            {label} {counts[value]}
+          </button>
+        ))}
       </div>
       {error && (
         <p className="error" role="alert">
@@ -106,13 +154,7 @@ export function TaskPanel({
         </p>
       )}
       {visible.length === 0 ? (
-        <p className="panel-empty">
-          {loading
-            ? "正在读取清单…"
-            : filter === "done"
-              ? "还没有完成的任务。"
-              : "清单是空的，跟小明说一声就行。"}
-        </p>
+        <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
       ) : (
         <ul className="panel-list">
           {visible.map((task) => {

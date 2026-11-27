@@ -239,16 +239,18 @@ textarea {
 }
 .panel-tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 16px 0 12px;
 }
 .panel-tabs button {
-  flex: 1;
+  flex: 1 1 52px;
   border: 1px solid #e3e6ed;
   background: #f8f9fc;
   border-radius: 9px;
-  padding: 6px 0;
-  font-size: 13px;
+  padding: 6px 4px;
+  font-size: 12px;
+  white-space: nowrap;
   color: #515c71;
 }
 .panel-tabs button.active {

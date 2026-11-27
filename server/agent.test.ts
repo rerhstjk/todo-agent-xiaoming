@@ -289,6 +289,37 @@ function scriptedClient(script: (round: number) => unknown): InjectedClient {
   } as unknown as InjectedClient;
 }
 
+test("回答今天、明天和本周的任务", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下今天下午三点交周报");
+  await send("记一下明天上午开会");
+  await send("记一下下周一复盘");
+  await send("记一下昨天交房租");
+
+  const today = await send("今天有哪些任务到期？");
+  assert.match(today, /今天（11月26日 周四）/);
+  assert.match(today, /交周报/);
+  assert.match(today, /另有 1 项已经逾期/);
+
+  const tomorrow = await send("明天有哪些任务？");
+  assert.match(tomorrow, /明天（11月27日 周五）/);
+  assert.match(tomorrow, /开会/);
+  assert.doesNotMatch(tomorrow, /交周报/);
+
+  const week = await send("这周还有什么要做的？");
+  assert.match(week, /本周还有 2 项任务要处理/);
+  assert.match(week, /交周报/);
+  assert.match(week, /开会/);
+  assert.doesNotMatch(week, /复盘/);
+
+  const overdue = await send("哪些任务逾期了？");
+  assert.match(overdue, /交房租/);
+  assert.doesNotMatch(overdue, /交周报/);
+
+  assert.equal(store.list().length, 4);
+});
+
 test("模型模式：执行工具调用，再转述工具返回的结果", async () => {
   const { store } = fixture();
   const client = scriptedClient((round) =>

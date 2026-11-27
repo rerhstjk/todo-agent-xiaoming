@@ -1,22 +1,9 @@
-import { randomUUID } from "node:crypto";
 import type { ChatMessage } from "../shared/chat.ts";
-import { findDateText, formatChineseDate, relativeDayLabel, stripClockTime } from "./dates.ts";
-import {
-  EFFORT_LABELS,
-  buildTaskListReply,
-  formatTaskList,
-  pendingSummary,
-  type TaskListScope,
-} from "./format.ts";
-import { normalizeForMatch, resolveTask } from "./matching.ts";
-import {
-  taskSubtasks,
-  type Effort,
-  type Priority,
-  type Task,
-  type TaskPatch,
-  type TaskStore,
-} from "./task-store.ts";
+import { execute, type Command } from "./commands.ts";
+import { findDateText, formatChineseDate, stripClockTime } from "./dates.ts";
+import { chatReply } from "./replies.ts";
+import type { TaskScope } from "./selection.ts";
+import { type Effort, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
 /**
  * 没配置 DEEPSEEK_API_KEY 时使用的规则引擎。它覆盖了题目验收对话里出现的说法，
@@ -27,7 +14,7 @@ import {
 type Action = "complete" | "reopen" | "delete";
 
 type Intent =
-  | { kind: "list"; scope: TaskListScope }
+  | { kind: "list"; scope: TaskScope }
   | { kind: "create"; title: string; dueDate?: string; priority?: Priority; effort?: Effort }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
@@ -229,9 +216,12 @@ export function parseIntent(text: string, now = new Date()): Intent {
   return { kind: "unknown" };
 }
 
-function listScope(text: string): TaskListScope {
+function listScope(text: string): TaskScope {
   if (/(逾期|过期|超期)/.test(text)) return "overdue";
-  if (/(今天|今日)/.test(text) && /(到期|截止|该做|要做|交)/.test(text)) return "today";
+  const taskWords = /(到期|截止|该做|要做|交|安排|任务|待办|事情|干点啥)/;
+  if (/(明天|明日)/.test(text) && taskWords.test(text)) return "tomorrow";
+  if (/(今天|今日)/.test(text) && taskWords.test(text)) return "today";
+  if (/(这周|本周|这个星期|这星期|这一周)/.test(text)) return "week";
   if (/(已完成|完成的|做完的|搞定的)/.test(text)) return "done";
   if (/(没完成|未完成|还没|没做|待办|要做|还要|剩下|剩余)/.test(text)) return "open";
   return "all";
@@ -301,28 +291,67 @@ function extractHint(text: string, verbs: string[]): string {
 
 export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new Date()): string {
   const choice = followUpChoice(messages);
-  if (choice) return runAction(store, choice.action, choice.title, now);
+  if (choice) return chatReply(execute(store, choice, now), now);
 
   const text = messages.at(-1)?.content ?? "";
   const intent = parseIntent(text, now);
 
   switch (intent.kind) {
     case "create":
-      return createTask(store, intent, now);
+      return chatReply(
+        execute(
+          store,
+          {
+            kind: "create",
+            input: {
+              title: intent.title,
+              dueDate: intent.dueDate,
+              priority: intent.priority,
+              effort: intent.effort,
+            },
+          },
+          now,
+        ),
+        now,
+      );
     case "list":
-      return listTasks(store, intent.scope, now);
-    case "action":
-      return runAction(store, intent.action, intent.hint, now);
+      return chatReply(execute(store, { kind: "list", scope: intent.scope }, now), now);
+    case "action": {
+      const command: Command =
+        intent.action === "delete"
+          ? { kind: "remove", hint: intent.hint }
+          : { kind: "setDone", hint: intent.hint, done: intent.action === "complete" };
+      return chatReply(execute(store, command, now), now);
+    }
     case "rename":
-      return renameTask(store, intent.hint, intent.title, now);
-    case "update":
-      return updateTask(store, intent.hint, intent, now);
+      return chatReply(
+        execute(store, { kind: "rename", hint: intent.hint, title: intent.title }, now),
+        now,
+      );
+    case "update": {
+      const patch: TaskPatch = {};
+      if (intent.dueDate) patch.dueDate = intent.dueDate;
+      if (intent.priority) patch.priority = intent.priority;
+      return chatReply(execute(store, { kind: "update", hint: intent.hint, patch }, now), now);
+    }
     case "subtask":
-      return updateSubtask(store, intent.hint, intent.action, intent.subtask, now);
+      return chatReply(
+        execute(
+          store,
+          {
+            kind: "subtask",
+            hint: intent.hint,
+            action: intent.action,
+            subtask: intent.subtask,
+          },
+          now,
+        ),
+        now,
+      );
     case "subtaskUnclear":
       return SUBTASK_UNCLEAR_TEXT;
     case "clearDone":
-      return clearDone(store);
+      return chatReply(execute(store, { kind: "clearDone" }, now), now);
     case "greeting":
       return greeting(store, now);
     case "help":
@@ -334,202 +363,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
   }
 }
 
-function createTask(
-  store: TaskStore,
-  intent: Extract<Intent, { kind: "create" }>,
-  now: Date,
-): string {
-  const duplicate = store
-    .list()
-    .find(
-      (task) => !task.done && normalizeForMatch(task.title) === normalizeForMatch(intent.title),
-    );
-
-  const task = store.create({
-    title: intent.title,
-    dueDate: intent.dueDate,
-    priority: intent.priority,
-    effort: intent.effort,
-  });
-
-  const details: string[] = [];
-  if (intent.dueDate) details.push(`截止 ${relativeDayLabel(intent.dueDate, now)}`);
-  if (intent.priority === "high") details.push("高优先级");
-  if (intent.priority === "low") details.push("低优先级");
-  if (intent.effort) details.push(`工作量${EFFORT_LABELS[intent.effort]}`);
-  const suffix = details.length > 0 ? `（${details.join(" · ")}）` : "";
-
-  const all = store.list();
-  const open = all.filter((item) => !item.done);
-  const pending =
-    open.length === 1 && open[0]?.id === task.id ? "清单里现在有 1 项待办。" : pendingSummary(all);
-  const lines = [`已记下「${task.title}」${suffix}。`, pending];
-  if (duplicate) {
-    lines.push(
-      `清单里本来就有一条同名的未完成任务「${duplicate.title}」，需要的话可以删掉其中一条。`,
-    );
-  }
-  return lines.join("\n");
-}
-
-function runAction(store: TaskStore, action: Action, hint: string, now: Date): string {
-  const tasks = store.list();
-  const resolution = resolveTask(tasks, hint);
-
-  if (resolution.kind === "missing") return missingTask(tasks, hint, action, now);
-  if (resolution.kind === "ambiguous") return askWhichTask(resolution.candidates, action);
-
-  const { task } = resolution;
-  if (action === "complete") {
-    if (task.done) return `「${task.title}」之前就已经完成了。\n${pendingSummary(tasks)}`;
-    store.update(task.id, { done: true });
-    return `已把「${task.title}」标记为已完成。\n${pendingSummary(store.list())}`;
-  }
-
-  if (action === "reopen") {
-    if (!task.done) return `「${task.title}」本来就没有完成，不用重新打开。`;
-    store.update(task.id, { done: false });
-    return `已把「${task.title}」重新标记为待办。\n${pendingSummary(store.list())}`;
-  }
-
-  store.remove(task.id);
-  return `已删除「${task.title}」。\n${pendingSummary(store.list())}`;
-}
-
-function renameTask(store: TaskStore, hint: string, title: string, now: Date): string {
-  const resolution = resolveTask(store.list(), hint);
-  if (resolution.kind === "missing") return missingTask(store.list(), hint, "complete", now);
-  if (resolution.kind === "ambiguous") return askWhichTask(resolution.candidates, "complete");
-
-  const { task } = resolution;
-  const updated = store.update(task.id, { title });
-  return updated
-    ? `已把「${task.title}」改成「${updated.title}」。\n${pendingSummary(store.list())}`
-    : `「${task.title}」已经不在清单里了。`;
-}
-
-function updateTask(
-  store: TaskStore,
-  hint: string,
-  intent: Extract<Intent, { kind: "update" }>,
-  now: Date,
-): string {
-  const resolution = resolveTask(store.list(), hint);
-  if (resolution.kind === "missing") return missingTask(store.list(), hint, "complete", now);
-  if (resolution.kind === "ambiguous") return askWhichTask(resolution.candidates, "complete");
-
-  const { task } = resolution;
-  const changes: TaskPatch = {};
-  if (intent.dueDate) changes.dueDate = intent.dueDate;
-  if (intent.priority) changes.priority = intent.priority;
-
-  const updated = store.update(task.id, changes);
-  if (!updated) return `「${task.title}」已经不在清单里了。`;
-
-  if (intent.dueDate) {
-    return `已把「${task.title}」的截止日期改成${relativeDayLabel(intent.dueDate, now)}（${intent.dueDate}）。`;
-  }
-  return `已把「${task.title}」设为${intent.priority === "high" ? "高优先级" : intent.priority === "low" ? "低优先级" : "中优先级"}。`;
-}
-
-function updateSubtask(
-  store: TaskStore,
-  hint: string,
-  action: "add" | "complete" | "remove",
-  subtaskTitle: string,
-  now: Date,
-): string {
-  const resolution = resolveTask(store.list(), hint);
-  if (resolution.kind === "missing") {
-    if (!hint) return "要操作哪一条任务的子任务？把任务名说得更完整一些就行。";
-    return missingTask(store.list(), hint, "complete", now);
-  }
-  if (resolution.kind === "ambiguous") {
-    // 子任务操作不能像整条任务那样用序号追问，避免用户回「1」时误删整条任务。
-    const options = resolution.candidates.map(
-      (task, index) => `${index + 1}. ${task.done ? "✓" : "○"} ${task.title}`,
-    );
-    return [
-      `有 ${resolution.candidates.length} 条任务都可能是指你说的那条，子任务操作要作用在哪一条上？`,
-      ...options,
-      "请把任务名说得更完整一些。",
-    ].join("\n");
-  }
-
-  const { task } = resolution;
-  const subtasks = taskSubtasks(task);
-  const normalized = normalizeForMatch(subtaskTitle);
-  const existing = subtasks.find((item) => normalizeForMatch(item.title) === normalized);
-
-  if (action === "add") {
-    if (existing) return `「${task.title}」下已经有子任务「${existing.title}」了。`;
-    const next = [...subtasks, { id: randomUUID(), title: subtaskTitle, done: false }];
-    store.update(task.id, { subtasks: next });
-    return `已给「${task.title}」添加子任务「${subtaskTitle}」（进度 ${next.filter((item) => item.done).length}/${next.length}）。\n${pendingSummary(store.list())}`;
-  }
-
-  if (!existing) {
-    const listed =
-      subtasks.length > 0 ? `现有的子任务：${subtasks.map((item) => item.title).join("、")}。` : "";
-    return `「${task.title}」下没有找到子任务「${subtaskTitle}」。${listed}`;
-  }
-
-  if (action === "remove") {
-    const next = subtasks.filter((item) => item.id !== existing.id);
-    store.update(task.id, { subtasks: next });
-    if (next.length === 0) {
-      return `已删除子任务「${existing.title}」，「${task.title}」下已经没有子任务了。\n${pendingSummary(store.list())}`;
-    }
-    return `已删除子任务「${existing.title}」（「${task.title}」进度 ${next.filter((item) => item.done).length}/${next.length}）。\n${pendingSummary(store.list())}`;
-  }
-
-  if (existing.done) return `子任务「${existing.title}」之前就完成了。`;
-
-  const next = subtasks.map((item) => (item.id === existing.id ? { ...item, done: true } : item));
-  store.update(task.id, { subtasks: next });
-  return `已完成子任务「${existing.title}」（「${task.title}」进度 ${next.filter((item) => item.done).length}/${next.length}）。\n${pendingSummary(store.list())}`;
-}
-
-function clearDone(store: TaskStore): string {
-  const done = store.list().filter((task) => task.done);
-  if (done.length === 0) return "清单里没有已完成的任务，不用清理。";
-
-  for (const task of done) store.remove(task.id);
-  return `已清理 ${done.length} 项已完成的任务。\n${pendingSummary(store.list())}`;
-}
-
-function listTasks(store: TaskStore, scope: TaskListScope, now: Date): string {
-  return buildTaskListReply(store.list(), scope, now);
-}
-
-function missingTask(tasks: Task[], hint: string, action: Action, now: Date): string {
-  const verb = action === "delete" ? "删除" : action === "reopen" ? "重新打开" : "完成";
-  if (!hint) return `要${verb}哪一条任务？告诉我任务名就行。`;
-
-  const head = `没找到和「${hint}」对应的任务。`;
-  if (tasks.length === 0) return `${head}清单还是空的，先说「记一下买牛奶」添加一条吧。`;
-
-  const open = tasks.filter((task) => !task.done);
-  const visible = open.length > 0 ? open : tasks;
-  const heading = open.length > 0 ? "当前待办：" : "当前清单：";
-  return [head, formatTaskList(visible, { heading, now })].join("\n");
-}
-
-/** 追问时给出带序号的候选，用户回「1」「第二条」都能继续。 */
-function askWhichTask(candidates: Task[], action: Action): string {
-  const verb = action === "delete" ? "要删除" : action === "reopen" ? "要重新打开" : "要完成";
-  const options = candidates.map(
-    (task, index) => `${index + 1}. ${task.done ? "✓" : "○"} ${task.title}`,
-  );
-  return [
-    `有 ${candidates.length} 条任务都可能是指你说的那条，${verb}哪一条？`,
-    ...options,
-    "回复序号或更完整的标题都可以。",
-  ].join("\n");
-}
-
 /** 用户只回了一个序号时，从上一条追问里取出候选标题。 */
-function followUpChoice(messages: ChatMessage[]): { action: Action; title: string } | undefined {
+function followUpChoice(messages: ChatMessage[]): Command | undefined {
   const text = messages.at(-1)?.content.trim() ?? "";
   const match = /^(?:第)?\s*([1-9]|[一二三四五六七八九十])\s*(?:条|个|项|条任务)?$/.exec(text);
   if (!match) return undefined;
@@ -539,8 +374,6 @@ function followUpChoice(messages: ChatMessage[]): { action: Action; title: strin
 
   const actionMatch = /要(完成|重新打开|删除)哪一条/.exec(previous.content);
   if (!actionMatch) return undefined;
-  const action: Action =
-    actionMatch[1] === "完成" ? "complete" : actionMatch[1] === "删除" ? "delete" : "reopen";
 
   const options: string[] = [];
   for (const line of previous.content.split("\n")) {
@@ -550,7 +383,10 @@ function followUpChoice(messages: ChatMessage[]): { action: Action; title: strin
 
   const index = /[1-9]/.test(match[1]) ? Number(match[1]) : (ORDINALS[match[1]] ?? 0);
   const title = options[index - 1];
-  return title ? { action, title } : undefined;
+  if (!title) return undefined;
+
+  if (actionMatch[1] === "删除") return { kind: "remove", hint: title };
+  return { kind: "setDone", hint: title, done: actionMatch[1] === "完成" };
 }
 
 function greeting(store: TaskStore, now: Date): string {
