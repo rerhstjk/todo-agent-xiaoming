@@ -111,6 +111,36 @@ test("支持子任务：添加、完成，并在清单里显示进度", async ()
   assert.match(listed, /子任务 1\/2/);
 });
 
+test("删除子任务只删子任务，不会误删父任务", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下写方案");
+  await send("给写方案加一个子任务：收集数据");
+  await send("给写方案加一个子任务：写初稿");
+
+  const removed = await send("把写方案的子任务写初稿删掉");
+  assert.match(removed, /已删除子任务「写初稿」/);
+  assert.deepEqual(
+    store.list().map((task) => task.title),
+    ["写方案"],
+  );
+  assert.deepEqual(
+    store.list()[0]?.subtasks?.map((item) => item.title),
+    ["收集数据"],
+  );
+
+  const listed = await send("我有哪些任务");
+  assert.match(listed, /子任务 0\/1/);
+
+  const missing = await send("把写方案的子任务画图删掉");
+  assert.match(missing, /没有找到子任务「画图」/);
+  assert.match(missing, /现有的子任务：收集数据/);
+
+  const unclear = await send("把子任务删掉");
+  assert.match(unclear, /先不动清单/);
+  assert.equal(store.list().length, 1);
+});
+
 test("有歧义时先追问，回复序号后继续完成", async () => {
   const { store, send } = fixture();
 
@@ -179,6 +209,39 @@ test("模型工具可以直接操作同一个 TaskStore", () => {
   const removed = runTool(store, "delete_task", { title: "牛奶" }, NOW);
   assert.equal(removed.ok, true);
   assert.equal(store.list().length, 0);
+});
+
+test("工具管理子任务支持添加、完成、删除", () => {
+  const { store } = fixture();
+  runTool(store, "create_task", { title: "写方案" }, NOW);
+
+  const added = runTool(
+    store,
+    "manage_subtasks",
+    { title: "写方案", action: "add", subtask: "收集数据" },
+    NOW,
+  );
+  assert.equal(added.ok, true);
+  assert.equal(store.list()[0]?.subtasks?.length, 1);
+
+  const completed = runTool(
+    store,
+    "manage_subtasks",
+    { title: "写方案", action: "complete", subtask: "收集数据" },
+    NOW,
+  );
+  assert.equal(completed.ok, true);
+  assert.equal(store.list()[0]?.subtasks?.[0]?.done, true);
+
+  const removed = runTool(
+    store,
+    "manage_subtasks",
+    { title: "写方案", action: "remove", subtask: "收集数据" },
+    NOW,
+  );
+  assert.equal(removed.ok, true);
+  assert.deepEqual(store.list()[0]?.subtasks, []);
+  assert.equal(store.list().length, 1);
 });
 
 test("工具遇到多条相似任务时返回候选而不是随便改", () => {

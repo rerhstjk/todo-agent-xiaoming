@@ -32,7 +32,8 @@ type Intent =
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
   | { kind: "update"; hint: string; dueDate?: string; priority?: Priority }
-  | { kind: "subtask"; hint: string; action: "add" | "complete"; subtask: string }
+  | { kind: "subtask"; hint: string; action: "add" | "complete" | "remove"; subtask: string }
+  | { kind: "subtaskUnclear" }
   | { kind: "clearDone" }
   | { kind: "greeting" }
   | { kind: "help" }
@@ -179,6 +180,25 @@ export function parseIntent(text: string, now = new Date()): Intent {
     if (hint && subtask) return { kind: "subtask", hint, action: "complete", subtask };
   }
 
+  const subtaskRemove =
+    /^(?:把|将)?\s*(.+?)\s*的?\s*子任务\s*(.+?)\s*(?:删掉|删除|删了|删去|去掉|移除|不要了)$/.exec(
+      value,
+    ) ??
+    /^(?:把|将)?\s*(?:删掉|删除|删了|删去|去掉|移除)\s*(.+?)\s*的?\s*子任务\s*(.+)$/.exec(value);
+  if (subtaskRemove) {
+    const hint = extractHint(subtaskRemove[1], []);
+    const subtask = cleanTitle(subtaskRemove[2]);
+    if (hint && subtask) return { kind: "subtask", hint, action: "remove", subtask };
+  }
+
+  // 提到子任务但没解析出具体动作、又带着删/完成类动词时，宁可追问，也不能作用到父任务上。
+  if (
+    value.includes("子任务") &&
+    (DELETE_WORDS.test(value) || COMPLETE_WORDS.test(value) || REOPEN_WORDS.test(value))
+  ) {
+    return { kind: "subtaskUnclear" };
+  }
+
   if (DELETE_WORDS.test(value)) {
     return { kind: "action", action: "delete", hint: extractHint(value, DELETE_VERBS) };
   }
@@ -299,6 +319,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       return updateTask(store, intent.hint, intent, now);
     case "subtask":
       return updateSubtask(store, intent.hint, intent.action, intent.subtask, now);
+    case "subtaskUnclear":
+      return SUBTASK_UNCLEAR_TEXT;
     case "clearDone":
       return clearDone(store);
     case "greeting":
@@ -413,13 +435,26 @@ function updateTask(
 function updateSubtask(
   store: TaskStore,
   hint: string,
-  action: "add" | "complete",
+  action: "add" | "complete" | "remove",
   subtaskTitle: string,
   now: Date,
 ): string {
   const resolution = resolveTask(store.list(), hint);
-  if (resolution.kind === "missing") return missingTask(store.list(), hint, "complete", now);
-  if (resolution.kind === "ambiguous") return askWhichTask(resolution.candidates, "complete");
+  if (resolution.kind === "missing") {
+    if (!hint) return "要操作哪一条任务的子任务？把任务名说得更完整一些就行。";
+    return missingTask(store.list(), hint, "complete", now);
+  }
+  if (resolution.kind === "ambiguous") {
+    // 子任务操作不能像整条任务那样用序号追问，避免用户回「1」时误删整条任务。
+    const options = resolution.candidates.map(
+      (task, index) => `${index + 1}. ${task.done ? "✓" : "○"} ${task.title}`,
+    );
+    return [
+      `有 ${resolution.candidates.length} 条任务都可能是指你说的那条，子任务操作要作用在哪一条上？`,
+      ...options,
+      "请把任务名说得更完整一些。",
+    ].join("\n");
+  }
 
   const { task } = resolution;
   const subtasks = taskSubtasks(task);
@@ -434,8 +469,20 @@ function updateSubtask(
   }
 
   if (!existing) {
-    return `「${task.title}」下没有找到子任务「${subtaskTitle}」。`;
+    const listed =
+      subtasks.length > 0 ? `现有的子任务：${subtasks.map((item) => item.title).join("、")}。` : "";
+    return `「${task.title}」下没有找到子任务「${subtaskTitle}」。${listed}`;
   }
+
+  if (action === "remove") {
+    const next = subtasks.filter((item) => item.id !== existing.id);
+    store.update(task.id, { subtasks: next });
+    if (next.length === 0) {
+      return `已删除子任务「${existing.title}」，「${task.title}」下已经没有子任务了。\n${pendingSummary(store.list())}`;
+    }
+    return `已删除子任务「${existing.title}」（「${task.title}」进度 ${next.filter((item) => item.done).length}/${next.length}）。\n${pendingSummary(store.list())}`;
+  }
+
   if (existing.done) return `子任务「${existing.title}」之前就完成了。`;
 
   const next = subtasks.map((item) => (item.id === existing.id ? { ...item, done: true } : item));
@@ -537,4 +584,12 @@ const UNKNOWN_TEXT = [
   "· 牛奶买好了",
   "· 取快递删掉",
   "· 今天有哪些任务到期",
+].join("\n");
+
+const SUBTASK_UNCLEAR_TEXT = [
+  "我这句没完全听懂，怕误操作到整条任务，先不动清单。",
+  "子任务目前支持添加、完成、删除，可以这样说：",
+  "· 给「写方案」加一个子任务：收集数据",
+  "· 「写方案」的子任务「收集数据」完成了",
+  "· 把「写方案」的子任务「收集数据」删掉",
 ].join("\n");
