@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
+import { parseChatTasks, type ChatTaskRow } from "./task-message.ts";
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
@@ -84,7 +85,11 @@ export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryPro
                 </form>
               ) : (
                 <>
-                  <div>{message.content}</div>
+                  {message.role === "assistant" ? (
+                    <AssistantContent content={message.content} />
+                  ) : (
+                    <div>{message.content}</div>
+                  )}
                   {index === lastUserIndex && !pending && (
                     <button
                       type="button"
@@ -117,6 +122,58 @@ export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryPro
           {pending && <p role="status">正在回复…</p>}
         </div>
       )}
+    </div>
+  );
+}
+
+function AssistantContent({ content }: { content: string }) {
+  const parsed = parseChatTasks(content);
+  if (!parsed) return <div>{content}</div>;
+
+  return (
+    <div className="chat-tasks-block">
+      {parsed.intro.map((line, index) => (
+        <p key={`intro-${index}`} className="chat-tasks-intro">
+          {line}
+        </p>
+      ))}
+      <div className="chat-tasks" role="list">
+        {parsed.rows.map((row, index) => (
+          <ChatTaskItem key={`task-${index}`} row={row} />
+        ))}
+      </div>
+      {parsed.outro.map((line, index) => (
+        <p key={`outro-${index}`} className="chat-tasks-outro">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function ChatTaskItem({ row }: { row: ChatTaskRow }) {
+  return (
+    <div className={`chat-task ${row.mark === "✓" ? "done" : "open"}`} role="listitem">
+      {row.number && <span className="chat-task-number">{row.number}</span>}
+      <span className="chat-task-mark" aria-label={row.mark === "✓" ? "已完成" : "待办"}>
+        {row.mark}
+      </span>
+      <div className="chat-task-body">
+        <span className="chat-task-title">{row.title}</span>
+        <span className="chat-task-meta">
+          {row.mark === "✓" ? "已完成" : "待办"}
+          {row.details ? ` · ${row.details}` : ""}
+        </span>
+        {row.subtasks.map((subtask, index) => (
+          <span
+            key={`sub-${index}`}
+            className={`chat-task-sub ${subtask.mark === "✓" ? "done" : ""}`}
+          >
+            <span className="chat-task-sub-mark">{subtask.mark}</span>
+            {subtask.title}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }

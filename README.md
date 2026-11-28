@@ -43,8 +43,8 @@
 - **提醒**：任务级开关，设了提醒的任务带铃铛（悬停显示具体时刻）；默认开始前 30 分钟，
   也可以说「提前 10 分钟提醒我」。页面打开时由浏览器发系统通知，页面关闭不会提醒。
 - **对话体验**：新建任务没提时间时先问「什么时候要做？」并给快捷选项；回答后依次补齐
-  提醒与预计用时，输入框上方会随问题出现「快捷回复」；编辑最新一轮提问（会回滚该轮之前
-  的清单操作并重新生成回复）；多条任务匹配时列出候选让用户回「1/2」；语音输入
+  提醒与预计用时，输入框上方会随问题出现「快捷回复」；清单回复在聊天里用卡片列出状态、
+  时间与优先级；编辑最新一轮提问（会回滚该轮之前的清单操作并重新生成回复）；多条任务匹配时列出候选让用户回「1/2」；语音输入
   （Chrome/Edge）；输入框上方预设提示词。
 - **双引擎**：不配置 `DEEPSEEK_API_KEY` 时走确定性规则引擎；配置后走 DeepSeek 工具调用，
   模型超时或报错会自动回退规则引擎，并避免重复写入。
@@ -92,21 +92,21 @@ README 里的验收对话就是 `server/agent.test.ts` 的第一条测试，逐�
 `commands.ts` 是唯一的领域层，负责定位任务、判歧义、幂等和安全边界；`replies.ts` 统一渲染中文回复。
 所以「同一个操作」在对话、面板、API 三条路径上的语义是一致的。
 
-| 文件 | 作用 |
-| --- | --- |
-| `server/agent.ts` | 智能体入口：模式选择、DeepSeek 工具循环、回退规则引擎 |
-| `server/rules.ts` | 规则引擎：中文意图、日期/时刻/提醒/标签解析 |
-| `server/tools.ts` | 模型工具定义与参数校验，适配到命令层 |
-| `server/commands.ts` | 命令层：增删改查、子任务、重复任务、撤销 |
-| `server/replies.ts` | 所有中文回复文案 |
-| `server/matching.ts` | 任务名匹配、歧义候选 |
-| `server/dates.ts` | 中文日期/时刻/相对时间解析 |
-| `server/selection.ts` | 时间范围、排序、逾期判断 |
-| `server/timezone.ts` | 固定时区（默认 Asia/Shanghai） |
-| `server/task-store.ts` | JSON 持久化（临时文件 + rename 原子写） |
-| `src/App.tsx` | 聊天界面、消息编辑、提醒开关 |
-| `src/TaskPanel.tsx` | 表格清单、搜索、筛选、批量操作 |
-| `src/TaskCalendar.tsx` | 月历视图 |
+| 文件                   | 作用                                                  |
+| ---------------------- | ----------------------------------------------------- |
+| `server/agent.ts`      | 智能体入口：模式选择、DeepSeek 工具循环、回退规则引擎 |
+| `server/rules.ts`      | 规则引擎：中文意图、日期/时刻/提醒/标签解析           |
+| `server/tools.ts`      | 模型工具定义与参数校验，适配到命令层                  |
+| `server/commands.ts`   | 命令层：增删改查、子任务、重复任务、撤销              |
+| `server/replies.ts`    | 所有中文回复文案                                      |
+| `server/matching.ts`   | 任务名匹配、歧义候选                                  |
+| `server/dates.ts`      | 中文日期/时刻/相对时间解析                            |
+| `server/selection.ts`  | 时间范围、排序、逾期判断                              |
+| `server/timezone.ts`   | 固定时区（默认 Asia/Shanghai）                        |
+| `server/task-store.ts` | JSON 持久化（临时文件 + rename 原子写）               |
+| `src/App.tsx`          | 聊天界面、消息编辑、提醒开关                          |
+| `src/TaskPanel.tsx`    | 表格清单、搜索、筛选、批量操作                        |
+| `src/TaskCalendar.tsx` | 月历视图                                              |
 
 架构、数据模型和边界情况的完整说明见 [IMPLEMENTATION.md](IMPLEMENTATION.md)。
 
