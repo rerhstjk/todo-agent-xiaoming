@@ -13,12 +13,15 @@ import {
   findRelativeMoment,
   formatChineseDate,
   startOfDay,
+  toClockString,
   toDateString,
+  toNumber,
 } from "./dates.ts";
 import { chatReply, createBatchChat } from "./replies.ts";
 import type { TaskScope } from "./selection.ts";
 import { findEffortHours, parseDurationAnswer } from "./effort.ts";
 import type { Repeat } from "./recurrence.ts";
+import { formatReminderPlan } from "./reminders.ts";
 import { normalizeTags, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
 /**
@@ -42,7 +45,11 @@ type Intent =
       effort?: number;
       tags?: string[];
       repeat?: Repeat;
+      remind?: boolean;
+      reminderAt?: string[];
     }
+  | { kind: "reminder"; hint: string; enabled: boolean }
+  | { kind: "reminderToggle" }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
   | { kind: "update"; hint: string; dueDate?: string; priority?: Priority; effort?: number }
@@ -226,6 +233,24 @@ export function parseIntent(text: string, now = new Date()): Intent {
     if (hint && found) return { kind: "update", hint, effort: found.hours };
   }
 
+  // 「给开会设个提醒」「关闭开会的提醒」：针对某条任务开关提醒。
+  const reminderSet =
+    /^(?:给|帮|为)?\s*(.+?)\s*(?:设|设置|开|打开|加)(?:一个|个)?\s*(?:提醒|闹钟)$/.exec(value);
+  if (reminderSet) {
+    const hint = extractHint(reminderSet[1]!, []);
+    if (hint) return { kind: "reminder", hint, enabled: true };
+  }
+  const reminderOff =
+    /^(?:取消|关闭|关掉|撤销|不用)\s*(?:给)?\s*(.+?)\s*(?:的)?\s*(?:提醒|闹钟)$/.exec(value) ??
+    /^(?:把|将)?\s*(.+?)\s*的?\s*(?:提醒|闹钟)\s*(?:取消|关掉|关闭|去掉|不用了?)$/.exec(value);
+  if (reminderOff) {
+    const hint = extractHint(reminderOff[1]!, []);
+    if (hint) return { kind: "reminder", hint, enabled: false };
+  }
+  if (/^(?:帮我)?(?:开启|打开|关闭|关掉)(?:浏览器)?提醒$/.test(value)) {
+    return { kind: "reminderToggle" };
+  }
+
   // 「再增加一条子任务，购买咖啡」「加个子任务：买咖啡」：没说加到哪条任务下，
   // 先用上下文里的上一条任务，解析层只把名字留空。
   const implicitSubtaskAdd =
@@ -356,40 +381,51 @@ function createIntent(text: string, now: Date): Intent {
     if (matched) monthlyDay = Number(matched[1]);
     value = value.replace(/每月\s*(?:\d{1,2}\s*[号日])?/g, " ");
   }
+  // 提醒习惯：
+  // - 「提醒我 5 点开会」里的时间记到开始时间，而不是截止时间；
+  // - 「提前 10 分钟提醒我」是自定义提醒时刻，按开始（或截止）往前算。
+  const reminderLead =
+    /^\s*(?:请|麻烦)?\s*(?:到时|记得|别忘了?)?\s*提醒我/.test(text) ||
+    /^\s*(?:\d+|[一二三四五六七八九十两]+|半)\s*(?:分钟|分|小时|钟头|天|周)\s*(?:后|以后)\s*提醒我/.test(
+      text,
+    );
+  const reminderBefore = parseReminderBefore(value);
+  if (reminderBefore) value = value.replace(reminderBefore.matched, " ");
+
   // 开始时间：「从明天开始」「明天下午三点开始」「9 点开始」。
   // 必须放在截止日期之前解析，否则「明天」会被当成截止日期。
   const start = findStartAt(value, now);
-  const startDate = start?.startDate;
-  const startTime = start?.startTime;
+  let startDate = start?.startDate;
+  let startTime = start?.startTime;
   if (start) value = value.replace(start.matched, " ");
 
-  let dueDate: string | undefined;
-  let dueTime: string | undefined;
+  let momentDate: string | undefined;
+  let momentTime: string | undefined;
 
   // 「三分钟后」「半小时后」这类相对时间直接按当前时刻往后算，不用反问用户。
   if (relative) {
-    dueDate = relative.dueDate;
-    dueTime = relative.dueTime;
+    momentDate = relative.dueDate;
+    momentTime = relative.dueTime;
   }
 
   // 先找具体时刻（下午三点 / 今晚5点 / 17:30），再找日期。
   // 时刻里的“今晚/明晚”本身带天数信息，后面没有日期时用它兜底。
-  const clock = dueDate ? undefined : findClockTime(value);
+  const clock = momentDate ? undefined : findClockTime(value);
   if (clock) {
-    dueTime = clock.value;
+    momentTime = clock.value;
     value = value.replace(clock.matched, " ");
   }
 
-  const parsed = dueDate ? undefined : findDateText(value, now);
+  const parsed = momentDate ? undefined : findDateText(value, now);
   if (parsed) {
-    dueDate = parsed.value;
+    momentDate = parsed.value;
     value = value.replace(parsed.matched, " ");
     value = value.replace(/^\s*[在于]\s*(?=为|给|和|跟|与|把|做|去|来)/, " ");
   } else if (clock) {
     // 只说“今晚5点”就按今天；只说“5点”则在时刻已过时顺延到明天。
     const offset = clock.day === "tomorrow" ? 1 : clock.day === "today" ? 0 : undefined;
     if (offset !== undefined) {
-      dueDate = toDateString(addDays(startOfDay(now), offset));
+      momentDate = toDateString(addDays(startOfDay(now), offset));
     } else {
       const [hour, minute] = clock.value.split(":").map(Number);
       const today = startOfDay(now);
@@ -400,12 +436,12 @@ function createIntent(text: string, now: Date): Intent {
         hour ?? 0,
         minute ?? 0,
       );
-      dueDate = toDateString(candidate.getTime() <= now.getTime() ? addDays(today, 1) : today);
+      momentDate = toDateString(candidate.getTime() <= now.getTime() ? addDays(today, 1) : today);
     }
   }
 
   // 「每月 15 号」没有完整日期，按今天之后最近的 15 号算。
-  if (monthlyDay !== undefined && !dueDate) {
+  if (monthlyDay !== undefined && !momentDate) {
     const today = startOfDay(now);
     const year = today.getFullYear();
     const month = today.getMonth();
@@ -415,7 +451,31 @@ function createIntent(text: string, now: Date): Intent {
       const nextDays = new Date(year, month + 2, 0).getDate();
       candidate = new Date(year, month + 1, Math.min(monthlyDay, nextDays));
     }
-    dueDate = toDateString(candidate);
+    momentDate = toDateString(candidate);
+  }
+
+  let dueDate: string | undefined;
+  let dueTime: string | undefined;
+  if (reminderLead) {
+    if (!startDate) {
+      startDate = momentDate;
+      startTime = momentTime;
+    }
+  } else {
+    dueDate = momentDate;
+    dueTime = momentTime;
+  }
+
+  let remind: boolean | undefined;
+  let reminderAt: string[] | undefined;
+  if (reminderBefore) {
+    const useDue = reminderBefore.anchor === "due" || (!startDate && Boolean(dueDate));
+    const date = useDue ? dueDate : startDate;
+    const time = useDue ? (dueTime ?? "23:59") : (startTime ?? "09:00");
+    if (date) {
+      reminderAt = [shiftMoment(date, time, -reminderBefore.minutes)];
+      remind = true;
+    }
   }
 
   let priority: Priority | undefined;
@@ -456,7 +516,40 @@ function createIntent(text: string, now: Date): Intent {
     effort,
     tags: tags.length > 0 ? tags : undefined,
     repeat,
+    remind,
+    reminderAt,
   };
+}
+
+/** 「提前 10 分钟提醒我」：算出相对开始（或截止）提前多久提醒。 */
+function parseReminderBefore(
+  text: string,
+): { minutes: number; anchor: "start" | "due"; matched: string } | undefined {
+  const match =
+    /(提前|开始前|截止前|到期前)\s*(\d{1,3}|[一二三四五六七八九十两]+|半)\s*(分钟|分|小时|钟头|天)\s*(?:提醒我?|给我?提醒|提醒)?/.exec(
+      text,
+    );
+  if (!match) return undefined;
+  const amount = match[2] === "半" ? 0.5 : toNumber(match[2]);
+  if (!amount) return undefined;
+  const unit = match[3]!;
+  const minutes =
+    unit === "天" ? amount * 1440 : unit === "小时" || unit === "钟头" ? amount * 60 : amount;
+  if (minutes <= 0 || minutes > 30 * 1440) return undefined;
+  return {
+    minutes,
+    anchor: /截止|到期/.test(match[1]!) ? "due" : "start",
+    matched: match[0],
+  };
+}
+
+/** 把日期 + 时刻往前/往后挪几分钟，返回 YYYY-MM-DDTHH:mm。 */
+function shiftMoment(date: string, time: string, minutes: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  const shifted = new Date(year ?? 1970, (month ?? 1) - 1, day ?? 1, hour ?? 0, minute ?? 0);
+  shifted.setMinutes(shifted.getMinutes() + minutes);
+  return `${toDateString(shifted)}T${toClockString(shifted)}`;
 }
 
 const START_PATTERN = new RegExp(
@@ -570,6 +663,8 @@ function splitCreateClauses(text: string): CreateClause[] | undefined {
   for (const raw of parts.slice(1)) {
     if (/^(或者|还是|或是)/.test(raw)) return undefined;
     const rest = raw.replace(CLAUSE_CONNECTOR, "").trim();
+    // 「提醒我明天开会，提前 10 分钟提醒我」里的后半句是提醒设置，不是新任务。
+    if (/^(提前|开始前|截止前|到期前|提醒时间)/.test(rest)) return undefined;
     const subtask = SUBTASK_CLAUSE.exec(rest);
     if (subtask) {
       const text = subtask[1]!.trim();
@@ -649,6 +744,9 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
   const choice = followUpChoice(messages);
   if (choice) return chatReply(execute(store, choice, now), now);
 
+  const answered = reminderFollowUp(store, messages);
+  if (answered) return answered;
+
   const text = messages.at(-1)?.content ?? "";
 
   // 先看是不是一句话里说了几件事。必须在 parseIntent 之前判断：
@@ -678,6 +776,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
               effort: intent.effort,
               tags: intent.tags,
               repeat: intent.repeat,
+              remind: intent.remind,
+              reminderAt: intent.reminderAt,
             },
           },
           now,
@@ -718,6 +818,25 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
         now,
       );
     }
+    case "reminder": {
+      const result = execute(
+        store,
+        { kind: "update", hint: intent.hint, patch: { remind: intent.enabled } },
+        now,
+      );
+      if (result.status !== "ok" || !result.task) return chatReply(result, now);
+      const task = result.task;
+      if (intent.enabled && !task.startDate && !task.dueDate) {
+        store.update(task.id, { remind: false });
+        return `「${task.title}」还没有开始或截止时间；先说个时间，我就能帮你设提醒。`;
+      }
+      if (intent.enabled) {
+        return `好，已给「${task.title}」打开提醒：${formatReminderPlan(task)}。`;
+      }
+      return `好，已关闭「${task.title}」的提醒。`;
+    }
+    case "reminderToggle":
+      return "浏览器提醒在清单右上角的「开启提醒」按钮里开关；要提醒某条任务，可以说「给开会设提醒」。";
     case "subtask": {
       const generic =
         !intent.hint ||
@@ -752,6 +871,30 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
     case "unknown":
       return UNKNOWN_TEXT;
   }
+}
+
+/** 上一条回复问过「要不要设提醒」时，处理用户回的「要 / 不用」。 */
+function reminderFollowUp(store: TaskStore, messages: ChatMessage[]): string | undefined {
+  const previous =
+    [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  if (!previous.includes("设个提醒")) return undefined;
+  const title = /已记下「(.+?)」/.exec(previous)?.[1];
+  if (!title) return undefined;
+  const task = store.list().find((item) => item.title === title && !item.done);
+  if (!task) return undefined;
+
+  const text = messages.at(-1)?.content.trim() ?? "";
+  if (/^(?:要|需要|好|好的|行|可以|设|设置|开|开启|打开)[吧了啊呀!！。]?$/.test(text)) {
+    if (!task.startDate && !task.dueDate) {
+      return `「${task.title}」还没有开始或截止时间；先说个时间，我就能帮你设提醒。`;
+    }
+    const updated = store.update(task.id, { remind: true }) ?? task;
+    return `好，已给「${task.title}」打开提醒：${formatReminderPlan(updated)}。`;
+  }
+  if (/^(?:不用|不要|不需要|不用了|算了|免了|不了)[吧了啊呀!！。]?$/.test(text)) {
+    return "好，这项不设提醒。";
+  }
+  return undefined;
 }
 
 /** 用户只回了一个序号时，从上一条追问里取出候选标题。 */
@@ -808,7 +951,8 @@ function greeting(store: TaskStore, now: Date): string {
 
 const HELP_TEXT = [
   "我可以帮你：",
-  "· 记一下买牛奶 —— 新建任务，例如「提醒我明天下午交报告」",
+  "· 记一下买牛奶 —— 新建任务，例如「记一下明天下午交报告」",
+  "· 提醒我明天下午三点开会 —— 时间记为开始时间，之后再问你要不要设提醒",
   "· 我有哪些任务 —— 查看清单和完成状态",
   "· 牛奶买好了 —— 标记完成",
   "· 取快递删掉 —— 删除任务",
@@ -817,6 +961,7 @@ const HELP_TEXT = [
   "· 提醒我每周一开会 —— 重复任务（每天/每周/每月）",
   "· 记一下买牛奶 #生活 —— 给任务加标签",
   "· 撤销 —— 恢复刚刚删掉的任务",
+  "· 给开会设提醒 / 取消开会的提醒 —— 打开或关闭单个任务的提醒",
   "另外还支持高/低优先级、预计用时（小时）和子任务。",
 ].join("\n");
 

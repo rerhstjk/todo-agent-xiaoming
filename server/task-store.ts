@@ -37,6 +37,10 @@ export interface Task {
   tags?: string[];
   /** 重复周期；有值时完成一条会生成下一次。 */
   repeat?: Repeat;
+  /** 用户是否给这条任务打开了提醒（默认不提醒）。 */
+  remind?: boolean;
+  /** 自定义提醒时刻，格式 YYYY-MM-DDTHH:mm（本地时间）；为空时用开始前 30 分钟 + 截止前 10 分钟。 */
+  reminderAt?: string[];
   subtasks?: Subtask[];
   [key: string]: unknown;
 }
@@ -47,6 +51,7 @@ const taskList = z.array(storedTask);
 const TITLE_MAX_LENGTH = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+const REMINDER_PATTERN = /^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/;
 
 export interface NewTask {
   title: string;
@@ -62,6 +67,8 @@ export interface NewTask {
   effort?: number;
   tags?: string[];
   repeat?: Repeat;
+  remind?: boolean;
+  reminderAt?: string[];
   subtasks?: string[];
 }
 
@@ -78,6 +85,8 @@ export interface TaskPatch {
   effort?: number | null;
   tags?: string[] | null;
   repeat?: Repeat | null;
+  remind?: boolean | null;
+  reminderAt?: string[] | null;
   subtasks?: Subtask[] | null;
 }
 
@@ -105,6 +114,30 @@ export function isTimeString(value: unknown): value is string {
 
 export function taskDueTime(task: Task): string | undefined {
   return isTimeString(task.dueTime) ? task.dueTime : undefined;
+}
+
+export function isReminderMoment(value: unknown): value is string {
+  return typeof value === "string" && REMINDER_PATTERN.test(value);
+}
+
+/** 规整自定义提醒时刻：只保留合法且不重复的项，最多 5 个。 */
+export function normalizeReminderAt(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (!isReminderMoment(raw)) continue;
+    seen.add(raw);
+    if (seen.size >= 5) break;
+  }
+  return [...seen];
+}
+
+export function taskReminderAt(task: Task): string[] {
+  return normalizeReminderAt(task.reminderAt);
+}
+
+export function taskRemind(task: Task): boolean {
+  return task.remind === true;
 }
 
 export function taskStartDate(task: Task): string | undefined {
@@ -217,6 +250,9 @@ export function createJsonTaskStore(filename: string): TaskStore {
     const tags = normalizeTags(draft.tags);
     if (tags.length > 0) task.tags = tags;
     if (isRepeat(draft.repeat)) task.repeat = draft.repeat;
+    if (draft.remind === true) task.remind = true;
+    const reminderAt = normalizeReminderAt(draft.reminderAt);
+    if (reminderAt.length > 0) task.reminderAt = reminderAt;
 
     const subtasks = (draft.subtasks ?? [])
       .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))

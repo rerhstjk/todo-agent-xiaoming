@@ -10,12 +10,16 @@ const subtaskSchema = z.strictObject({
   title: z.string().trim().min(1).max(200),
   done: z.boolean(),
 });
+const reminderMoment = z.string().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/);
 const updateTaskSchema = createTaskSchema
   .partial()
   .extend({
     done: z.boolean().optional(),
     // 前端清单面板勾选子任务时，整组子任务一起回写。
     subtasks: z.array(subtaskSchema).max(50).optional(),
+    // 提醒开关与自定义提醒时刻（含逐个任务的小铃铛）。
+    remind: z.boolean().optional(),
+    reminderAt: z.array(reminderMoment).max(5).optional(),
   })
   .refine((changes) => Object.keys(changes).length > 0);
 
@@ -41,7 +45,9 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
   router.patch("/:id", (req, res) => {
     const input = updateTaskSchema.safeParse(req.body);
     if (!input.success) {
-      return res.status(400).json({ error: "请提供有效的 title、done 或 subtasks 字段。" });
+      return res
+        .status(400)
+        .json({ error: "请提供有效的 title、done、subtasks、remind 或 reminderAt 字段。" });
     }
 
     const before = tasks.get(req.params.id);

@@ -13,6 +13,7 @@ import {
   type TaskPatch,
   type TaskStore,
 } from "./task-store.ts";
+import { normalizeReminderAt } from "./task-store.ts";
 
 /** 交给模型的工具清单，参数描述直接写中文，减少模型猜字段的情况。 */
 export const toolSchemas: ChatCompletionTool[] = [
@@ -69,6 +70,15 @@ export const toolSchemas: ChatCompletionTool[] = [
             type: "array",
             items: { type: "string" },
             description: "子任务标题列表，用户提到拆步骤时使用。",
+          },
+          remind: {
+            type: "boolean",
+            description: "用户是否要提醒；没说就传 false，并在回复里问一句要不要设提醒。",
+          },
+          reminderAt: {
+            type: "array",
+            items: { type: "string" },
+            description: "用户指定的提醒时刻，格式 YYYY-MM-DDTHH:mm，最多 5 个；没指定就不要传。",
           },
         },
       },
@@ -230,6 +240,8 @@ const updateArgs = z.object({
   note: z.string().optional(),
   tags: z.array(z.string()).max(10).optional(),
   repeat: z.string().optional(),
+  remind: z.boolean().optional(),
+  reminderAt: z.array(z.string()).max(5).optional(),
 });
 
 const deleteArgs = z.object({
@@ -365,6 +377,11 @@ export function runTool(
         const effort = parseEffort(args.effort);
         if (effort !== undefined) patch.effort = effort;
         if (args.note !== undefined) patch.note = args.note.trim() || null;
+        if (args.remind !== undefined) patch.remind = args.remind;
+        if (args.reminderAt !== undefined) {
+          const reminderAt = normalizeReminderAt(args.reminderAt);
+          patch.reminderAt = reminderAt.length > 0 ? reminderAt : null;
+        }
         if (args.tags !== undefined) {
           const tags = normalizeTags(args.tags);
           patch.tags = tags.length > 0 ? tags : null;

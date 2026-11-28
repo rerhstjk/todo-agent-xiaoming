@@ -10,6 +10,7 @@ import {
   effortText,
   endOfWeek,
   isOverdue,
+  reminderDetail,
   startText,
   toDateString,
   type DueBucket,
@@ -210,6 +211,15 @@ export function TaskPanel({
             <div className="task-main">
               <span className="task-title">{task.title}</span>
               {repeat && <span className="repeat-tag">{repeat}</span>}
+              {task.remind === true && (
+                <span
+                  className="bell"
+                  title={`已设置提醒：${reminderDetail(task)}`}
+                  aria-label={`已设置提醒：${reminderDetail(task)}`}
+                >
+                  🔔
+                </span>
+              )}
               {(task.tags ?? []).map((tag) => (
                 <span className="tag-pill" key={tag}>
                   #{tag}

@@ -1,7 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { ApiTask } from "./chat-client.ts";
-import { dueReminders } from "./reminder-window.ts";
-import { dueText } from "./task-dates.ts";
+import { dueReminders, type PendingReminder } from "./reminder-window.ts";
 
 const STORAGE_KEY = "xiaoming.reminded";
 const MAX_REMEMBERED = 200;
@@ -39,14 +38,13 @@ function saveNotified(notified: Set<string>): void {
 }
 
 /**
- * 页面打开期间轮询任务；到截止前 5 分钟内弹一次浏览器通知
- * （同一任务同一截止时刻只弹一次），并回调 onDue 让页面内也给出提示，
- * 避免系统通知被专注模式或系统设置拦掉时用户什么都看不到。
+ * 页面打开期间轮询任务；每个提醒时刻只弹一次浏览器通知，
+ * 并回调 onDue 让页面内也给出提示，避免系统通知被专注模式或系统设置拦掉时用户什么都看不到。
  */
 export function useTaskReminders(
   tasks: ApiTask[],
   enabled: boolean,
-  onDue?: (task: ApiTask, at: number) => void,
+  onDue?: (reminder: PendingReminder) => void,
 ): void {
   const notified = useRef<Set<string> | null>(null);
   if (notified.current === null) notified.current = loadNotified();
@@ -59,14 +57,22 @@ export function useTaskReminders(
 
     const check = () => {
       const pending = dueReminders(tasks, Date.now(), (key) => notified.current?.has(key) ?? false);
-      for (const { key, task, at } of pending) {
-        notified.current?.add(key);
+      for (const reminder of pending) {
+        notified.current?.add(reminder.key);
         if (notified.current) saveNotified(notified.current);
-        onDueRef.current?.(task, at);
+        onDueRef.current?.(reminder);
         if (Notification.permission !== "granted") continue;
         try {
-          const title = at <= Date.now() ? "任务到时间了" : "任务快到期了";
-          new Notification(title, { body: `${task.title} · ${dueText(task)}`, tag: key });
+          const title =
+            reminder.kind === "start"
+              ? "任务快开始了"
+              : reminder.kind === "due"
+                ? "任务快到截止时间了"
+                : "任务提醒";
+          new Notification(title, {
+            body: `${reminder.task.title} · ${reminder.label}`,
+            tag: reminder.key,
+          });
         } catch {
           // 某些浏览器在后台标签页会拒绝构造通知；页面内的提示已经兜住了。
         }

@@ -190,7 +190,7 @@ const DIGITS: Record<string, number> = {
   九: 9,
 };
 
-function toNumber(raw: string | undefined): number | undefined {
+export function toNumber(raw: string | undefined): number | undefined {
   if (raw === undefined || raw === "") return undefined;
   if (raw === "半") return 30;
   if (/^\d+$/.test(raw)) return Number(raw);

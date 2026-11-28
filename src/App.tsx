@@ -109,19 +109,27 @@ export default function App() {
     }
   }
 
-  useTaskReminders(tasks, reminderOn, (task, at) => {
+  useTaskReminders(tasks, reminderOn, (reminder) => {
     // 系统通知可能被专注模式或系统设置拦掉，页面里也给一条可见的提示。
-    notifyAgent(
-      at <= Date.now() ? `提醒：「${task.title}」到截止时间了。` : `提醒：「${task.title}」快到期了。`,
-    );
+    const what =
+      reminder.kind === "start"
+        ? "快开始了"
+        : reminder.kind === "due"
+          ? "快到截止时间了"
+          : "到提醒时间了";
+    notifyAgent(`提醒：「${reminder.task.title}」${what}（${reminder.label}）。`);
   });
 
   function enableReminders() {
     setReminderOn(true);
     window.localStorage.setItem("xiaoming.reminders", "on");
-    notifyAgent("已开启浏览器提醒：任务到点前 1 分钟会弹系统通知，页面里也会同步提示。");
+    notifyAgent(
+      "已开启浏览器提醒：设了提醒的任务会在开始前 30 分钟、截止前 10 分钟提醒，页面里也会同步提示。",
+    );
     try {
-      new Notification("提醒已开启", { body: "任务到点前 1 分钟，我会在这里提醒你。" });
+      new Notification("提醒已开启", {
+        body: "设了提醒的任务会在开始前 30 分钟、截止前 10 分钟提醒你。",
+      });
     } catch {
       // 页面内提示已经给出，不影响后续轮询。
     }

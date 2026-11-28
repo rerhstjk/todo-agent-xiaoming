@@ -8,6 +8,7 @@ import {
   pendingSummary,
   taskDetails,
 } from "./format.ts";
+import { formatReminderPlan } from "./reminders.ts";
 import { overdueTasks } from "./selection.ts";
 import { taskEffortHours, type Task } from "./task-store.ts";
 import { toPublicTask } from "./task-view.ts";
@@ -98,6 +99,13 @@ function ok(result: CommandResult): { ok: boolean; changed: boolean } {
   return { ok: result.status === "ok", changed: result.changed };
 }
 
+/** 有时间安排、又没打开提醒时，问一句要不要设提醒。 */
+function reminderAsk(task: Task): string | undefined {
+  if (task.remind === true) return undefined;
+  if (!task.startDate && !task.dueDate) return undefined;
+  return `要不要给「${task.title}」设个提醒？默认开始前 30 分钟、截止前 10 分钟，回「要」或「不用」。`;
+}
+
 function createChat(result: CommandResult, now: Date): string {
   const task = result.task;
   if (!task) return "创建任务失败，请稍后再试。";
@@ -106,7 +114,12 @@ function createChat(result: CommandResult, now: Date): string {
     `已记下「${task.title}」${taskDetails(task, now)}。`,
     pendingLine(result.tasks, task),
   ];
-  if (taskEffortHours(task) === undefined) {
+  const askReminder = reminderAsk(task);
+  if (task.remind === true) {
+    lines.push(`提醒已经设好：${formatReminderPlan(task)}。`);
+  } else if (askReminder) {
+    lines.push(askReminder);
+  } else if (taskEffortHours(task) === undefined) {
     lines.push(`这项大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
   }
   if (result.duplicate) {
@@ -121,6 +134,10 @@ function createTool(result: CommandResult, now: Date): { message: string; data?:
   const task = result.task;
   const suffix = task ? taskDetails(task, now) : "";
   const lines = [`已记下「${task?.title ?? ""}」${suffix}。${pendingSummary(result.tasks)}`];
+  if (task) {
+    const askReminder = reminderAsk(task);
+    if (askReminder) lines.push(askReminder);
+  }
   if (result.duplicate) {
     lines.push(`清单里本来就有一条同名的未完成任务「${result.duplicate.title}」。`);
   }
@@ -145,8 +162,15 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
     );
   }
 
+  const needsReminder = created.filter((task) => reminderAsk(task) !== undefined);
+  if (needsReminder.length > 0) {
+    lines.push(`要不要给这些任务设提醒？可以说「给开会设提醒」，不需要就回「不用」。`);
+  }
+
   const missingEffort =
-    created.length > 0 && created.every((task) => taskEffortHours(task) === undefined);
+    !needsReminder.length &&
+    created.length > 0 &&
+    created.every((task) => taskEffortHours(task) === undefined);
   if (missingEffort) {
     lines.push(
       created.length === 1

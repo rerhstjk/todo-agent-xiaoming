@@ -37,6 +37,9 @@ export interface NewTaskInput {
   note?: string;
   tags?: string[];
   repeat?: Repeat;
+  remind?: boolean;
+  /** 自定义提醒时刻，格式 YYYY-MM-DDTHH:mm。 */
+  reminderAt?: string[];
   subtasks?: string[];
 }
 
@@ -210,7 +213,31 @@ export function createNextOccurrence(
     effort: taskEffortHours(task),
     tags: taskTags(task),
     repeat,
+    remind: task.remind === true,
+    reminderAt: shiftReminderAt(task, repeat),
     subtasks: taskSubtasks(task).map((item) => item.title),
+  });
+}
+
+/** 自定义提醒时刻跟着下一次的日期一起顺延；默认提醒不用存时刻。 */
+function shiftReminderAt(task: Task, repeat: Repeat): string[] | undefined {
+  const values = Array.isArray(task.reminderAt) ? task.reminderAt : [];
+  if (values.length === 0) return undefined;
+  const oldDate = taskDueDate(task) ?? taskStartDate(task);
+  if (!oldDate) return undefined;
+  const nextDate = nextDueDate(oldDate, repeat, new Date());
+  const days = Math.round(
+    (new Date(`${nextDate}T00:00`).getTime() - new Date(`${oldDate}T00:00`).getTime()) / 86_400_000,
+  );
+  if (!Number.isFinite(days) || days === 0) return values;
+  return values.map((value) => {
+    const [date, time] = value.split("T");
+    const shifted = new Date(`${date}T00:00`);
+    shifted.setDate(shifted.getDate() + days);
+    const year = shifted.getFullYear();
+    const month = String(shifted.getMonth() + 1).padStart(2, "0");
+    const day = String(shifted.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}T${time ?? "09:00"}`;
   });
 }
 

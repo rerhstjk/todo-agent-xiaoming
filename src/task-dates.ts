@@ -56,6 +56,78 @@ export function deadline(task: ApiTask): number | undefined {
   ).getTime();
 }
 
+/** 开始时刻：有 HH:mm 就取那一刻，否则按当天 09:00 算。 */
+export function startMoment(task: ApiTask): number | undefined {
+  const date = parseDateString(task.startDate);
+  if (!date) return undefined;
+  const [hour, minute] = (task.startTime ?? "09:00").split(":").map(Number);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hour ?? 9,
+    minute ?? 0,
+  ).getTime();
+}
+
+export interface TaskReminder {
+  at: number;
+  kind: "start" | "due" | "custom";
+  label: string;
+}
+
+const MINUTE = 60 * 1000;
+
+function clockString(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * 任务实际会提醒的时刻（与服务端 `server/reminders.ts` 保持一致）：
+ * 用户指定了提醒时刻就只按指定的来，否则开始前 30 分钟、截止前 10 分钟各一次。
+ */
+export function reminderPlan(task: ApiTask): TaskReminder[] {
+  if (task.remind !== true) return [];
+  const custom = (task.reminderAt ?? []).filter(
+    (value) => !Number.isNaN(new Date(value).getTime()),
+  );
+  if (custom.length > 0) {
+    return custom.map((value) => {
+      const at = new Date(value).getTime();
+      const sameDay =
+        toDateString(new Date(at)) === toDateString(new Date())
+          ? ""
+          : relativeDayLabel(toDateString(new Date(at))) + " ";
+      return { at, kind: "custom" as const, label: `提醒 ${sameDay}${clockString(at)}` };
+    });
+  }
+
+  const plan: TaskReminder[] = [];
+  const start = startMoment(task);
+  if (start !== undefined) {
+    const at = start - 30 * MINUTE;
+    plan.push({ at, kind: "start", label: `开始前 30 分钟（${clockString(at)}）` });
+  }
+  const due = deadline(task);
+  if (due !== undefined) {
+    const at = due - 10 * MINUTE;
+    plan.push({ at, kind: "due", label: `截止前 10 分钟（${clockString(at)}）` });
+  }
+  const seen = new Set<number>();
+  return plan.filter((entry) => {
+    if (seen.has(entry.at)) return false;
+    seen.add(entry.at);
+    return true;
+  });
+}
+
+/** 铃铛的悬浮说明。 */
+export function reminderDetail(task: ApiTask): string {
+  const plan = reminderPlan(task);
+  return plan.length > 0 ? plan.map((entry) => entry.label).join("、") : "";
+}
+
 export function isOverdue(task: ApiTask): boolean {
   const moment = deadline(task);
   return !task.done && moment !== undefined && moment < Date.now();
@@ -82,13 +154,17 @@ export function startText(task: ApiTask): string {
 
 export function compareTasks(a: ApiTask, b: ApiTask): number {
   const weight: Record<string, number> = { high: 0, normal: 1, low: 2 };
-  if (a.dueDate !== b.dueDate) {
-    if (!a.dueDate) return 1;
-    if (!b.dueDate) return -1;
-    return a.dueDate < b.dueDate ? -1 : 1;
+  const dateA = a.dueDate ?? a.startDate;
+  const dateB = b.dueDate ?? b.startDate;
+  if (dateA !== dateB) {
+    if (!dateA) return 1;
+    if (!dateB) return -1;
+    return dateA < dateB ? -1 : 1;
   }
-  if ((a.dueTime ?? "") !== (b.dueTime ?? "")) {
-    return (a.dueTime ?? "23:59") < (b.dueTime ?? "23:59") ? -1 : 1;
+  const timeA = a.dueTime ?? a.startTime;
+  const timeB = b.dueTime ?? b.startTime;
+  if ((timeA ?? "") !== (timeB ?? "")) {
+    return (timeA ?? "23:59") < (timeB ?? "23:59") ? -1 : 1;
   }
   if (a.priority !== b.priority) {
     return (weight[a.priority ?? "normal"] ?? 1) - (weight[b.priority ?? "normal"] ?? 1);
@@ -110,11 +186,12 @@ export function dueBucket(
   today = toDateString(new Date()),
   weekEnd = endOfWeek(),
 ): DueBucket {
-  if (!task.dueDate) return "more";
-  if (task.dueDate < today) return "overdue";
-  if (task.dueDate === today) return "today";
-  if (task.dueDate === addDaysString(today, 1)) return "tomorrow";
-  if (task.dueDate <= weekEnd) return "week";
+  const date = task.dueDate ?? task.startDate;
+  if (!date) return "more";
+  if (date < today) return "overdue";
+  if (date === today) return "today";
+  if (date === addDaysString(today, 1)) return "tomorrow";
+  if (date <= weekEnd) return "week";
   return "more";
 }
 

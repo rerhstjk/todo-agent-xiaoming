@@ -84,7 +84,9 @@ test("创建任务时识别日期、时刻、优先级和工作量", async () =>
   await send("提醒我明天下午三点交报告");
   const task = store.list()[0];
   assert.equal(task?.title, "交报告");
-  assert.equal(task?.dueDate, "2026-11-27");
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "15:00");
+  assert.equal(task?.dueDate, undefined);
 
   await send("记一下高优先级写周报，工作量小");
   const weekly = store.list().find((item) => item.title === "写周报");
@@ -428,7 +430,7 @@ test("一句话里的两件事会拆成两条任务，各自的日期都保留",
 
   assert.equal(store.list().length, 2);
   const meeting = store.list().find((task) => task.title === "开会");
-  assert.equal(meeting?.dueDate, "2026-11-27");
+  assert.equal(meeting?.startDate, "2026-11-27");
   const prepare = store.list().find((task) => task.title.includes("准备材料"));
   assert.equal(prepare?.dueDate, "2026-11-26");
   assert.match(reply, /已记下 2 条任务/);
@@ -733,8 +735,8 @@ test("每天重复的任务完成后会自动排好下一次", async () => {
   assert.match(reply, /已记下「写日报」/);
   const task = store.list()[0];
   assert.equal(task?.repeat, "daily");
-  assert.equal(task?.dueTime, "18:00");
-  assert.equal(task?.dueDate, "2026-11-26");
+  assert.equal(task?.startTime, "18:00");
+  assert.equal(task?.startDate, "2026-11-26");
 
   const done = await send("写日报完成了");
   assert.match(done, /下一次/);
@@ -742,8 +744,8 @@ test("每天重复的任务完成后会自动排好下一次", async () => {
   assert.equal(tasks.length, 2);
   const next = tasks.find((item) => !item.done);
   assert.equal(next?.title, "写日报");
-  assert.equal(next?.dueDate, "2026-11-27");
-  assert.equal(next?.dueTime, "18:00");
+  assert.equal(next?.startDate, "2026-11-27");
+  assert.equal(next?.startTime, "18:00");
   assert.equal(next?.repeat, "daily");
 });
 
@@ -752,12 +754,12 @@ test("每周一和每月 15 号都能解析成具体日期", async () => {
   await send("提醒我每周一开会");
   const weekly = store.list().find((task) => task.title === "开会");
   assert.equal(weekly?.repeat, "weekly");
-  assert.equal(weekly?.dueDate, "2026-11-30");
+  assert.equal(weekly?.startDate, "2026-11-30");
 
   await send("提醒我每月15号交房租");
   const monthly = store.list().find((task) => task.title === "交房租");
   assert.equal(monthly?.repeat, "monthly");
-  assert.equal(monthly?.dueDate, "2026-12-15");
+  assert.equal(monthly?.startDate, "2026-12-15");
 });
 
 test("删除后可以用「撤销」恢复", async () => {
@@ -810,12 +812,13 @@ test("三分钟后、半小时后这类相对时间直接换算，不用反问�
   await send("提醒我三分钟后开会，高优先级");
   const meeting = store.list()[0];
   assert.equal(meeting?.title, "开会");
-  assert.equal(meeting?.dueDate, "2026-11-26");
-  assert.equal(meeting?.dueTime, "09:03");
+  assert.equal(meeting?.startDate, "2026-11-26");
+  assert.equal(meeting?.startTime, "09:03");
+  assert.equal(meeting?.dueDate, undefined);
   assert.equal(meeting?.priority, "high");
 
   await send("半小时后提醒我喝水");
-  assert.equal(store.list()[1]?.dueTime, "09:30");
+  assert.equal(store.list()[1]?.startTime, "09:30");
 
   await send("一个半小时后打电话");
   assert.equal(store.list()[2]?.dueTime, "10:30");
@@ -826,4 +829,49 @@ test("三分钟后、半小时后这类相对时间直接换算，不用反问�
   await send("三天后交报告");
   assert.equal(store.list()[4]?.dueDate, "2026-11-29");
   assert.equal(store.list()[4]?.dueTime, undefined);
+});
+
+test("创建带时间的任务时会问要不要提醒，回「要」后打开", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("记一下明天上午10点开会");
+  assert.match(reply, /要不要给「开会」设个提醒/);
+  assert.equal(store.list()[0]?.remind, undefined);
+
+  const yes = await send("要");
+  assert.match(yes, /打开提醒/);
+  assert.equal(store.list()[0]?.remind, true);
+
+  const list = await send("我有哪些任务？");
+  assert.match(list, /开会/);
+});
+
+test("回「不用」时不设提醒", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下明天上午10点开会");
+  const no = await send("不用");
+  assert.match(no, /不设提醒/);
+  assert.equal(store.list()[0]?.remind, undefined);
+});
+
+test("「提前 10 分钟提醒」按用户指定的时刻提醒", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("提醒我明天下午3点开会，提前10分钟提醒我");
+  assert.doesNotMatch(reply, /要不要给/);
+  const task = store.list()[0];
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "15:00");
+  assert.equal(task?.remind, true);
+  assert.deepEqual(task?.reminderAt, ["2026-11-27T14:50"]);
+});
+
+test("也可以直接说「给开会设提醒」", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下明天上午10点开会");
+  const reply = await send("给开会设提醒");
+  assert.match(reply, /打开提醒/);
+  assert.equal(store.list()[0]?.remind, true);
 });

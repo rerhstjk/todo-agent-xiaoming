@@ -104,7 +104,7 @@ paths:
         schema: { type: string }
     patch:
       operationId: updateTask
-      summary: 修改标题、完成状态或子任务
+      summary: 修改标题、完成状态、子任务或提醒
       requestBody:
         required: true
         content:
@@ -120,6 +120,11 @@ paths:
                   type: array
                   description: 整组子任务（用于前端清单面板勾选子任务），最多 50 条
                   items: { $ref: "#/components/schemas/Subtask" }
+                remind: { type: boolean, description: 打开或关闭单个任务的提醒 }
+                reminderAt:
+                  type: array
+                  description: 自定义提醒时刻，YYYY-MM-DDTHH:mm，最多 5 个；空数组改回默认提醒
+                  items: { type: string }
       responses:
         "200":
           description: 更新后的任务
@@ -169,6 +174,15 @@ components:
           description: 标签，最多 10 个，每个不超过 20 字
           items: { type: string }
         note: { type: string, description: 备注 }
+        remind:
+          {
+            type: boolean,
+            description: 是否打开该任务的提醒（默认提醒：开始前 30 分钟、截止前 10 分钟）,
+          }
+        reminderAt:
+          type: array
+          description: 自定义提醒时刻，本地时间 YYYY-MM-DDTHH:mm，最多 5 个；有自定义时只按自定义提醒
+          items: { type: string }
         subtasks:
           type: array
           description: 子任务列表

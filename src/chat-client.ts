@@ -14,6 +14,10 @@ export type ApiTask = {
   effort?: number | string;
   tags?: string[];
   repeat?: "daily" | "weekly" | "monthly";
+  /** 用户是否给这条任务打开了提醒。 */
+  remind?: boolean;
+  /** 自定义提醒时刻，格式 YYYY-MM-DDTHH:mm。 */
+  reminderAt?: string[];
   subtasks?: { id: string; title: string; done: boolean }[];
 };
 

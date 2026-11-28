@@ -2,59 +2,64 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ApiTask } from "../src/chat-client.ts";
 import { dueReminders, reminderKey } from "../src/reminder-window.ts";
-import { toDateString } from "../src/task-dates.ts";
+import { reminderPlan } from "../src/task-dates.ts";
 
-const now = new Date(2026, 10, 26, 9, 0, 0);
+const DATE = "2026-11-26";
 
 function task(overrides: Partial<ApiTask> = {}): ApiTask {
-  return { id: "t1", title: "开会", done: false, ...overrides };
+  return { id: "t1", title: "开会", done: false, remind: true, ...overrides };
 }
 
-test("临近截止的任务会进入提醒队列", () => {
-  const soon = task({
-    id: "soon",
-    dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "09:01",
-  });
-  const later = task({
-    id: "later",
-    dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "09:05",
-  });
-  const done = task({ id: "done", done: true, dueDate: toDateString(new Date(2026, 10, 26)) });
-  const pending = dueReminders([soon, later, done], now.getTime(), () => false);
+test("默认在开始前 30 分钟和截止前 10 分钟提醒", () => {
+  const meeting = task({ startDate: DATE, startTime: "10:00", dueDate: DATE, dueTime: "12:00" });
+  const plan = reminderPlan(meeting);
   assert.deepEqual(
-    pending.map((item) => item.task.id),
-    ["soon"],
+    plan.map((entry) => entry.kind),
+    ["start", "due"],
+  );
+  assert.equal(new Date(plan[0]!.at).getHours(), 9);
+  assert.equal(new Date(plan[0]!.at).getMinutes(), 30);
+  assert.equal(new Date(plan[1]!.at).getHours(), 11);
+  assert.equal(new Date(plan[1]!.at).getMinutes(), 50);
+
+  // 09:29:40 离「开始前 30 分钟」还有 20 秒，进入提醒队列。
+  const now = new Date(2026, 10, 26, 9, 29, 40).getTime();
+  const pending = dueReminders([meeting], now, () => false);
+  assert.deepEqual(
+    pending.map((entry) => entry.kind),
+    ["start"],
   );
 });
 
-test("刚过截止时间的任务补一次提醒，太早偏过去的不再打扰", () => {
-  const justOverdue = task({
-    id: "overdue",
-    dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "08:55",
+test("用户指定了提醒时刻就只按指定时刻提醒", () => {
+  const meeting = task({
+    startDate: DATE,
+    startTime: "10:00",
+    reminderAt: [`${DATE}T09:05`],
   });
-  const longOverdue = task({
-    id: "old",
-    dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "08:00",
-  });
-  const pending = dueReminders([justOverdue, longOverdue], now.getTime(), () => false);
+  const plan = reminderPlan(meeting);
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0]!.kind, "custom");
+  const now = new Date(2026, 10, 26, 9, 4, 40).getTime();
+  assert.equal(dueReminders([meeting], now, () => false).length, 1);
+  // 默认的开始前 30 分钟不再触发。
+  const atStartWindow = new Date(2026, 10, 26, 9, 29, 40).getTime();
+  assert.equal(dueReminders([meeting], atStartWindow, () => false).length, 0);
+});
+
+test("没有打开提醒的任务不会进入提醒队列", () => {
+  const meeting = task({ startDate: DATE, startTime: "10:00", remind: false });
+  const now = new Date(2026, 10, 26, 9, 29, 40).getTime();
   assert.deepEqual(
-    pending.map((item) => item.task.id),
-    ["overdue"],
+    dueReminders([meeting], now, () => false),
+    [],
   );
 });
 
-test("同一个任务同一截止时刻只提醒一次", () => {
-  const soon = task({
-    id: "soon",
-    dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "09:01",
-  });
-  const at = new Date(2026, 10, 26, 9, 1).getTime();
-  const key = reminderKey(soon, at);
-  const pending = dueReminders([soon], now.getTime(), (item) => item === key);
-  assert.equal(pending.length, 0);
+test("同一个提醒时刻只提醒一次", () => {
+  const meeting = task({ startDate: DATE, startTime: "10:00" });
+  const at = new Date(2026, 10, 26, 9, 30).getTime();
+  const key = reminderKey(meeting, at, "start");
+  const now = new Date(2026, 10, 26, 9, 29, 40).getTime();
+  assert.equal(dueReminders([meeting], now, (item) => item === key).length, 0);
 });
