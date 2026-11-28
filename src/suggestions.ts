@@ -23,7 +23,7 @@ export const suggestions: Suggestion[] = [
  * 例如刚问「什么时候要做？」时，出现今天 / 明天 / 暂不设置。
  */
 export function quickRepliesFor(text: string): Suggestion[] {
-  if (/什么时候要做|什么时候完成|还没(?:有)?安排时间/.test(text)) {
+  if (/什么时候(?:要做|完成|做|安排|有空|方便)|还没(?:有)?安排时间|打算什么时候/.test(text)) {
     return [
       { label: "今天", text: "今天" },
       { label: "明天下午三点", text: "明天下午三点" },
