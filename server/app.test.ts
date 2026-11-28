@@ -15,8 +15,9 @@ async function startTestApp(t: TestContext) {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const filename = join(directory, "tasks.json");
   const conversations: ChatMessage[][] = [];
+  const store = createJsonTaskStore(filename);
   const app = createApp({
-    tasks: createJsonTaskStore(filename),
+    tasks: store,
     async reply(messages) {
       conversations.push(messages);
       return "收到";
@@ -40,7 +41,7 @@ async function startTestApp(t: TestContext) {
     };
   }
 
-  return { request, conversations, filename };
+  return { request, conversations, filename, store };
 }
 
 test("任务 API 可以创建、列出、修改和删除任务", async (t) => {
@@ -194,4 +195,34 @@ test("删除后可以从撤销接口恢复完整任务", async (t) => {
     status: 404,
     body: { error: "没有可以撤销的删除。" },
   });
+});
+
+test("在面板上标记完成重复任务时，也会自动生成下一次", async (t) => {
+  const { request, store } = await startTestApp(t);
+  const task = await store.create({
+    title: "写日报",
+    dueDate: "2026-11-28",
+    dueTime: "18:00",
+    repeat: "daily",
+    tags: ["工作"],
+    effort: 0.5,
+  });
+
+  assert.equal((await request("PATCH", `/api/tasks/${task.id}`, { done: true })).status, 200);
+
+  const list = await store.list();
+  assert.equal(list.length, 2);
+  const completed = list.find((item) => item.id === task.id);
+  const next = list.find((item) => item.id !== task.id);
+  assert.equal(completed?.done, true);
+  assert.equal(next?.done, false);
+  assert.equal(next?.dueDate, "2026-11-29");
+  assert.equal(next?.dueTime, "18:00");
+  assert.equal(next?.repeat, "daily");
+  assert.deepEqual(next?.tags, ["工作"]);
+  assert.equal(next?.effort, 0.5);
+
+  // 重复点完成不会无限生成。
+  await request("PATCH", `/api/tasks/${task.id}`, { done: true });
+  assert.equal((await store.list()).length, 2);
 });

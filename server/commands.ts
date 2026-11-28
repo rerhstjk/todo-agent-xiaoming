@@ -181,24 +181,37 @@ function setDone(
   };
 
   // 重复任务：完成当前这一条后，自动排好下一次，避免用户每天手动重记。
-  const repeat = updated && command.done ? taskRepeat(updated) : undefined;
-  if (updated && repeat) {
-    result.nextTask = store.create({
-      title: updated.title,
-      note: typeof updated.note === "string" ? updated.note : undefined,
-      startDate: nextDueDate(taskStartDate(updated), repeat, now),
-      startTime: taskStartTime(updated),
-      dueDate: nextDueDate(taskDueDate(updated), repeat, now),
-      dueTime: taskDueTime(updated),
-      priority: taskPriority(updated),
-      effort: taskEffortHours(updated),
-      tags: taskTags(updated),
-      repeat,
-      subtasks: taskSubtasks(updated).map((item) => item.title),
-    });
-    result.tasks = store.list();
+  if (updated && command.done) {
+    result.nextTask = createNextOccurrence(store, updated, now);
+    if (result.nextTask) result.tasks = store.list();
   }
   return result;
+}
+
+/**
+ * 完成一条重复任务后，按原任务的日期、标签、预计用时等复制出下一次。
+ * 对话和清单面板最后都走这里，避免两边行为不一致。
+ */
+export function createNextOccurrence(
+  store: TaskStore,
+  task: Task,
+  now = new Date(),
+): Task | undefined {
+  const repeat = taskRepeat(task);
+  if (!repeat) return undefined;
+  return store.create({
+    title: task.title,
+    note: typeof task.note === "string" ? task.note : undefined,
+    startDate: nextDueDate(taskStartDate(task), repeat, now),
+    startTime: taskStartTime(task),
+    dueDate: nextDueDate(taskDueDate(task), repeat, now),
+    dueTime: taskDueTime(task),
+    priority: taskPriority(task),
+    effort: taskEffortHours(task),
+    tags: taskTags(task),
+    repeat,
+    subtasks: taskSubtasks(task).map((item) => item.title),
+  });
 }
 
 function remove(store: TaskStore, command: Extract<Command, { kind: "remove" }>): CommandResult {

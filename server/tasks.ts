@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { defaultActivity, type ActivityLog } from "./activity.ts";
+import { createNextOccurrence } from "./commands.ts";
 import type { TaskStore } from "./task-store.ts";
 
 const createTaskSchema = z.strictObject({ title: z.string().trim().min(1).max(200) });
@@ -48,13 +49,19 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     if (!updated) return res.status(404).json(taskNotFound);
 
     // 面板能改的只有标题、完成状态和子任务；其余字段由对话写入，不走这里。
-    const kind =
-      input.data.done === true && before?.done !== true
-        ? "completed"
-        : input.data.done === false && before?.done !== false
-          ? "reopened"
-          : "updated";
+    const completed = input.data.done === true && before?.done !== true;
+    const kind = completed
+      ? "completed"
+      : input.data.done === false && before?.done !== false
+        ? "reopened"
+        : "updated";
     activity.record({ kind, title: updated.title });
+
+    // 面板点完成和对话里说完成要产生同样的结果：重复任务自动排下一次。
+    if (completed) {
+      const next = createNextOccurrence(tasks, updated);
+      if (next) activity.record({ kind: "created", title: next.title });
+    }
     res.json(updated);
   });
 

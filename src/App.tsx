@@ -208,7 +208,11 @@ export default function App() {
     try {
       await setTaskDone(task.id, !task.done);
       setTasksError("");
-      notifyAgent(`已通知小明：${task.done ? "重新打开" : "完成"}「${task.title}」`);
+      if (!task.done && task.repeat) {
+        notifyAgent(`已完成「${task.title}」，下一次已自动排好。`);
+      } else {
+        notifyAgent(`已通知小明：${task.done ? "重新打开" : "完成"}「${task.title}」`);
+      }
     } catch (cause) {
       setTasksError(cause instanceof Error ? cause.message : "更新任务失败。");
     } finally {
