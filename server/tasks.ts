@@ -1,8 +1,9 @@
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { z } from "zod";
 import { defaultActivity, type ActivityLog } from "./activity.ts";
 import { createNextOccurrence } from "./commands.ts";
-import type { TaskStore } from "./task-store.ts";
+import type { Task, TaskStore } from "./task-store.ts";
 
 const createTaskSchema = z.strictObject({ title: z.string().trim().min(1).max(200) });
 const subtaskSchema = z.strictObject({
@@ -29,8 +30,21 @@ const updateTaskSchema = createTaskSchema
     // 提醒开关与自定义提醒时刻（含逐个任务的小铃铛）。
     remind: z.boolean().optional(),
     reminderAt: z.array(reminderMoment).max(5).optional(),
+    // 面板内联编辑：备注与手动排序序号。
+    note: z.string().max(2000).optional(),
+    position: z.number().int().min(0).max(100_000).optional(),
   })
   .refine((changes) => Object.keys(changes).length > 0);
+
+const importTaskSchema = z.looseObject({
+  id: z.string().optional(),
+  title: z.string().trim().min(1).max(200),
+  done: z.boolean().optional(),
+});
+const importSchema = z.object({
+  tasks: z.array(importTaskSchema).min(1).max(1000),
+  mode: z.enum(["merge", "replace"]).optional(),
+});
 
 const taskNotFound = { error: "找不到这条任务。" };
 
@@ -39,6 +53,37 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
 
   router.get("/", (_req, res) => {
     res.json(tasks.list());
+  });
+
+  // 导出整份清单（含扩展字段），方便备份或迁移。
+  router.get("/export", (_req, res) => {
+    res.setHeader("Content-Disposition", 'attachment; filename="xiaoming-tasks.json"');
+    res.json({ version: 1, exportedAt: new Date().toISOString(), tasks: tasks.list() });
+  });
+
+  // 导入清单：默认合并，同 id 冲突时换新 id；mode=replace 会用文件覆盖整份清单。
+  router.post("/import", (req, res) => {
+    const parsed = importSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res
+        .status(400)
+        .json({ error: "导入格式不正确：需要 { tasks: [...] }，每条任务至少有标题。" });
+    }
+    if (!tasks.restoreAll) {
+      return res.status(501).json({ error: "当前存储不支持导入。" });
+    }
+
+    const existing = tasks.list();
+    const used = new Set(existing.map((task) => task.id));
+    const incoming = parsed.data.tasks.map((item) => {
+      const { id, title, done, ...rest } = item;
+      const key = typeof id === "string" && id.length > 0 && !used.has(id) ? id : randomUUID();
+      used.add(key);
+      return { ...rest, id: key, title, done: done === true } as Task;
+    });
+    const mode = parsed.data.mode ?? "merge";
+    tasks.restoreAll(mode === "replace" ? incoming : [...existing, ...incoming]);
+    res.status(201).json({ imported: incoming.length, total: tasks.list().length, mode });
   });
 
   router.post("/", (req, res) => {
@@ -56,7 +101,10 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     if (!input.success) {
       return res
         .status(400)
-        .json({ error: "请提供有效的 title、done、subtasks、开始时间、优先级、标签或提醒字段。" });
+        .json({
+          error:
+            "请提供有效的 title、done、subtasks、开始时间、优先级、标签、备注、排序或提醒字段。",
+        });
     }
 
     const before = tasks.get(req.params.id);

@@ -17,7 +17,7 @@ npm run dev          # 打开 http://127.0.0.1:3000
 ## 验证
 
 ```sh
-npm test             # 89 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环
+npm test             # 92 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
 npm run demo         # 不开服务、不花模型费用，直接在终端跑一遍验收对话和扩展场景
 npm run typecheck
 npm run build
@@ -99,12 +99,17 @@ src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/tas
 | `subtasks`  | `{ id, title, done }[]`                                          |
 | `tags`      | 标签数组，最多 10 个，每个不超过 20 字                           |
 | `repeat`    | `daily` / `weekly` / `monthly`，完成一次后自动生成下一次         |
-| `note`      | 备注（目前未在对话里暴露，预留给后续扩展）                       |
+| `note`      | 备注；对话里随任务一起记，面板可就地编辑                         |
+| `position`  | 手动排序序号，仅面板「手动排序」模式写入                         |
 
 HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只接受 `title`；
 `PATCH /api/tasks/:id` 在原有 `title` / `done` 之外允许整组回写 `subtasks`（清单面板勾选子任务用），
 其余扩展字段由智能体直接通过 `TaskStore` 写入。这样既不影响原有测试和文档，
 又让对话和面板都能管理更丰富的任务。
+
+`PATCH /api/tasks/:id` 还允许写 `startDate/startTime/priority/effort/tags/repeat/note/position/remind/reminderAt`，
+供面板就地编辑、手动排序和提醒开关使用；`GET /api/tasks/export` 导出整份清单，
+`POST /api/tasks/import` 支持 `mode: "merge" | "replace"` 合并或覆盖导入。
 
 `POST /api/tasks/undo` 用于撤销删除（面板上的「撤销」，或对话里说「撤销」）：服务进程内保留最近
 20 条被删任务的完整快照，恢复时沿用原 id、子任务完成状态、标签、时刻等字段；重启后清空。
@@ -209,5 +214,9 @@ HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只
 - 日历按开始日期归档；没有日期的任务在日历下方的提示里给出数量。
 - 时间筛选提供全部时间 / 今天 / 明天 / 本周 / 更多，还没有「指定某一天」「下周」这类更细的筛选。
 - 工作量筛选按 1 小时以内 / 1–3 小时 / 3 小时以上 / 未估算分档；还没有自定义区间。
-- 具体时刻按服务器本地时区解释；跨时区协作不在当前范围内。
+- 时区固定为 `Asia/Shanghai`（`server/timezone.ts` 设置 `TZ`，可用 `XIAOMING_TIMEZONE` 覆盖），
+  任务不存创建时的时区偏移；跨时区协作不在当前范围内。
+- 手动排序只在面板里生效，且是在当前筛选结果上重排 position；筛选后再拖动可能把未显示任务的序号挤开，
+  建议手动排序时不叠加搜索/筛选。
+- 备注和开始时间可以在面板就地编辑，标签目前只支持在对话里增删。
 - 模型模式只做了离线单元测试（假模型），真实 DeepSeek 调用需要在 `.env` 配置密钥后手动验证。

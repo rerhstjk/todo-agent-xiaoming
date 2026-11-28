@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import type { ApiTask } from "./chat-client.ts";
+import { useEffect, useRef, useState } from "react";
+import type { ApiTask, TaskEditFields } from "./chat-client.ts";
 import { TaskCalendar } from "./TaskCalendar.tsx";
 import type { ReminderPermission } from "./use-reminders.ts";
 import {
@@ -12,6 +12,7 @@ import {
   reminderDetail,
   startText,
   toDateString,
+  urgency,
   type DueBucket,
 } from "./task-dates.ts";
 
@@ -56,6 +57,15 @@ const GROUP_META: Record<DueBucket | "done", { label: string }> = {
 
 const OPEN_GROUPS: Exclude<DueBucket, "overdue">[] = ["today", "tomorrow", "week", "more"];
 
+type EditDraft = {
+  title: string;
+  startDate: string;
+  startTime: string;
+  priority: "low" | "normal" | "high";
+  effort: string;
+  note: string;
+};
+
 export function TaskPanel({
   tasks,
   loading,
@@ -72,6 +82,10 @@ export function TaskPanel({
   reminder,
   reminderOn,
   onToggleReminders,
+  onEdit,
+  onReorder,
+  onExport,
+  onImport,
 }: {
   tasks: ApiTask[];
   loading: boolean;
@@ -89,6 +103,12 @@ export function TaskPanel({
   reminder: ReminderPermission;
   reminderOn: boolean;
   onToggleReminders: () => void;
+  /** 面板内联编辑：保存标题、开始时间、优先级、工作量和备注。 */
+  onEdit: (task: ApiTask, fields: TaskEditFields) => void | Promise<void>;
+  /** 手动排序：按新顺序回写 position。 */
+  onReorder: (ids: string[]) => void | Promise<void>;
+  onExport: () => void;
+  onImport: (file: File) => void | Promise<void>;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
@@ -100,6 +120,11 @@ export function TaskPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
+  const [sortMode, setSortMode] = useState<"time" | "manual">("time");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<EditDraft | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement | null>(null);
   const activeFilters =
     (tagFilter !== "all" ? 1 : 0) +
     (timeFilter !== "all" ? 1 : 0) +
@@ -163,7 +188,18 @@ export function TaskPanel({
         }))
       : [{ key: status === "done" ? "done" : "overdue", tasks: visible }];
   const shownGroups = groups.filter((group) => group.tasks.length > 0);
-  const selectedTasks = visible.filter((task) => selected.has(task.id));
+  const manualRows = pool
+    .filter((task) => !task.done)
+    .sort(
+      (a, b) =>
+        (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
+        compareTasks(a, b),
+    );
+  const rows = sortMode === "manual" ? manualRows : visible;
+  const listEmpty = sortMode === "manual" ? rows.length === 0 : visible.length === 0;
+  const selectedTasks = (sortMode === "manual" ? rows : visible).filter((task) =>
+    selected.has(task.id),
+  );
 
   function toggleSelected(id: string) {
     setSelected((current) => {
@@ -180,11 +216,73 @@ export function TaskPanel({
     );
   }
 
+  function beginEdit(task: ApiTask) {
+    setEditingId(task.id);
+    setDraft({
+      title: task.title,
+      startDate: task.startDate ?? "",
+      startTime: task.startTime ?? "",
+      priority: task.priority ?? "normal",
+      effort: typeof task.effort === "number" ? `${task.effort}` : "",
+      note: task.note ?? "",
+    });
+  }
+
+  async function submitEdit(task: ApiTask) {
+    if (!draft) return;
+    const title = draft.title.trim();
+    if (!title) return;
+    const effort = draft.effort.trim();
+    await onEdit(task, {
+      title,
+      startDate: draft.startDate || null,
+      startTime: draft.startTime || null,
+      priority: draft.priority,
+      effort: effort === "" ? null : Number(effort),
+      note: draft.note,
+    });
+    setEditingId(null);
+    setDraft(null);
+  }
+
+  function dropOn(targetId: string) {
+    if (!dragId || dragId === targetId) {
+      setDragId(null);
+      return;
+    }
+    const ids = rows.map((task) => task.id);
+    const from = ids.indexOf(dragId);
+    const to = ids.indexOf(targetId);
+    setDragId(null);
+    if (from < 0 || to < 0) return;
+    ids.splice(to, 0, ids.splice(from, 1)[0]!);
+    void onReorder(ids);
+  }
+
+  function toggleSortMode() {
+    const next = sortMode === "time" ? "manual" : "time";
+    setSortMode(next);
+    if (next === "manual") {
+      setStatus("open");
+      setQuery("");
+      setTagFilter("all");
+      setTimeFilter("all");
+      setPriorityFilter("all");
+      setEffortFilter("all");
+      setSelectMode(false);
+      setShowFilters(false);
+      setEditingId(null);
+      setDraft(null);
+    }
+  }
+
   function renderRow(task: ApiTask) {
     const subtasks = task.subtasks ?? [];
     const finished = subtasks.filter((item) => item.done).length;
     const overdue = isOverdue(task);
     const priority = task.priority ?? "normal";
+    const urgent = urgency(task);
+    const editing = editingId === task.id;
     const repeat =
       task.repeat === "daily"
         ? "每天"
@@ -194,90 +292,230 @@ export function TaskPanel({
             ? "每月"
             : "";
     return (
-      <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
-        <div className="cell-title" role="cell">
-          {selectMode && (
-            <input
-              type="checkbox"
-              className="row-select"
-              aria-label={`选择「${task.title}」`}
-              checked={selected.has(task.id)}
-              onChange={() => toggleSelected(task.id)}
-            />
-          )}
-          <button
-            className="check"
-            aria-label={task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`}
-            aria-pressed={task.done}
-            onClick={() => onToggle(task)}
-          >
-            {task.done ? "✓" : ""}
-          </button>
-          <div className="task-body">
-            <div className="task-main">
-              <span className="task-title">{task.title}</span>
-              {repeat && <span className="repeat-tag">{repeat}</span>}
-              {(task.remind === true || (task.reminderAt?.length ?? 0) > 0) && (
-                <span
-                  className="bell"
-                  title={`已设置提醒：${reminderDetail(task)}`}
-                  aria-label={`已设置提醒：${reminderDetail(task)}`}
+      <div key={task.id} className={`panel-row-wrap${editing ? " editing" : ""}`}>
+        <div
+          role="row"
+          className={`panel-row${task.done ? " done" : ""}${dragId === task.id ? " dragging" : ""} urgency-${urgent.level}`}
+          draggable={sortMode === "manual" && !editing}
+          onDragStart={(event) => {
+            if (sortMode !== "manual") return;
+            setDragId(task.id);
+            event.dataTransfer.effectAllowed = "move";
+          }}
+          onDragOver={(event) => {
+            if (sortMode !== "manual") return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+          }}
+          onDrop={(event) => {
+            if (sortMode !== "manual") return;
+            event.preventDefault();
+            dropOn(task.id);
+          }}
+        >
+          <div className="cell-title" role="cell">
+            {sortMode === "manual" && (
+              <span className="drag-handle" aria-hidden="true" title="拖动排序">
+                ⠿
+              </span>
+            )}
+            {selectMode && (
+              <input
+                type="checkbox"
+                className="row-select"
+                aria-label={`选择「${task.title}」`}
+                checked={selected.has(task.id)}
+                onChange={() => toggleSelected(task.id)}
+              />
+            )}
+            <button
+              className="check"
+              aria-label={
+                task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`
+              }
+              aria-pressed={task.done}
+              onClick={() => onToggle(task)}
+            >
+              {task.done ? "✓" : ""}
+            </button>
+            <div className="task-body">
+              <div className="task-main">
+                {urgent.label && (
+                  <span className={`urgency-dot urgency-${urgent.level}`} title={urgent.label} />
+                )}
+                <button
+                  type="button"
+                  className="task-title-button"
+                  title="点击编辑"
+                  onClick={() => beginEdit(task)}
                 >
-                  🔔
-                </span>
+                  {task.title}
+                </button>
+                {repeat && <span className="repeat-tag">{repeat}</span>}
+                {(task.remind === true || (task.reminderAt?.length ?? 0) > 0) && (
+                  <span
+                    className="bell"
+                    title={`已设置提醒：${reminderDetail(task)}`}
+                    aria-label={`已设置提醒：${reminderDetail(task)}`}
+                  >
+                    🔔
+                  </span>
+                )}
+                {(task.tags ?? []).map((tag) => (
+                  <span className="tag-pill" key={tag}>
+                    #{tag}
+                  </span>
+                ))}
+                {subtasks.length > 0 && (
+                  <span className="subtask-count">
+                    子任务 {finished}/{subtasks.length}
+                  </span>
+                )}
+              </div>
+              {task.note && (
+                <p className="task-note" title={task.note}>
+                  {task.note}
+                </p>
               )}
-              {(task.tags ?? []).map((tag) => (
-                <span className="tag-pill" key={tag}>
-                  #{tag}
-                </span>
-              ))}
               {subtasks.length > 0 && (
-                <span className="subtask-count">
-                  子任务 {finished}/{subtasks.length}
-                </span>
+                <ul className="subtask-list">
+                  {subtasks.map((subtask) => (
+                    <li key={subtask.id} className={subtask.done ? "done" : ""}>
+                      <button
+                        className="subtask-check"
+                        aria-label={
+                          subtask.done
+                            ? `把子任务「${subtask.title}」重新打开`
+                            : `完成子任务「${subtask.title}」`
+                        }
+                        aria-pressed={subtask.done}
+                        onClick={() => onToggleSubtask(task, subtask.id)}
+                      >
+                        {subtask.done ? "✓" : "○"}
+                      </button>
+                      <span className="subtask-title">{subtask.title}</span>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-            {subtasks.length > 0 && (
-              <ul className="subtask-list">
-                {subtasks.map((subtask) => (
-                  <li key={subtask.id} className={subtask.done ? "done" : ""}>
-                    <button
-                      className="subtask-check"
-                      aria-label={
-                        subtask.done
-                          ? `把子任务「${subtask.title}」重新打开`
-                          : `完成子任务「${subtask.title}」`
-                      }
-                      aria-pressed={subtask.done}
-                      onClick={() => onToggleSubtask(task, subtask.id)}
-                    >
-                      {subtask.done ? "✓" : "○"}
-                    </button>
-                    <span className="subtask-title">{subtask.title}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
-        </div>
-        <span className={`cell-start${overdue ? " overdue" : ""}`} role="cell">
-          {startText(task)}
-        </span>
-        <span className="cell-effort" role="cell">
-          {effortText(task)}
-        </span>
-        <span className="cell-priority" role="cell">
-          <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
-        </span>
-        <span className="cell-delete" role="cell">
-          <button
-            className="delete"
-            aria-label={`删除「${task.title}」`}
-            onClick={() => onDelete(task)}
+          <span
+            className={`cell-start${overdue ? " overdue" : ""}`}
+            role="cell"
+            title={urgent.label || undefined}
           >
-            ×
-          </button>
-        </span>
+            {startText(task)}
+          </span>
+          <span className="cell-effort" role="cell">
+            {effortText(task)}
+          </span>
+          <span className="cell-priority" role="cell">
+            <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
+          </span>
+          <span className="cell-delete" role="cell">
+            <button
+              className="edit"
+              aria-label={`编辑「${task.title}」`}
+              title="编辑"
+              onClick={() => beginEdit(task)}
+            >
+              ✎
+            </button>
+            <button
+              className="delete"
+              aria-label={`删除「${task.title}」`}
+              onClick={() => onDelete(task)}
+            >
+              ×
+            </button>
+          </span>
+        </div>
+        {editing && draft && (
+          <form
+            className="task-edit"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void submitEdit(task);
+            }}
+          >
+            <label className="task-edit-wide">
+              标题
+              <input
+                value={draft.title}
+                onChange={(event) => setDraft({ ...draft, title: event.target.value })}
+                maxLength={200}
+                autoFocus
+              />
+            </label>
+            <label>
+              开始日期
+              <input
+                type="date"
+                value={draft.startDate}
+                onChange={(event) => setDraft({ ...draft, startDate: event.target.value })}
+              />
+            </label>
+            <label>
+              开始时刻
+              <input
+                type="time"
+                value={draft.startTime}
+                onChange={(event) => setDraft({ ...draft, startTime: event.target.value })}
+              />
+            </label>
+            <label>
+              优先级
+              <select
+                value={draft.priority}
+                onChange={(event) =>
+                  setDraft({
+                    ...draft,
+                    priority: event.target.value as EditDraft["priority"],
+                  })
+                }
+              >
+                <option value="high">高</option>
+                <option value="normal">中</option>
+                <option value="low">低</option>
+              </select>
+            </label>
+            <label>
+              工作量（小时）
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={draft.effort}
+                onChange={(event) => setDraft({ ...draft, effort: event.target.value })}
+                placeholder="未估算"
+              />
+            </label>
+            <label className="task-edit-wide">
+              备注
+              <textarea
+                rows={2}
+                value={draft.note}
+                maxLength={2000}
+                onChange={(event) => setDraft({ ...draft, note: event.target.value })}
+                placeholder="补充说明，会显示在任务标题下方"
+              />
+            </label>
+            <div className="task-edit-actions">
+              <button type="submit">保存</button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(null);
+                  setDraft(null);
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        )}
       </div>
     );
   }
@@ -312,6 +550,23 @@ export function TaskPanel({
                   ? "提醒已开"
                   : "开启提醒"}
           </button>
+          <button className="ghost" onClick={onExport} aria-label="导出清单">
+            导出
+          </button>
+          <button className="ghost" onClick={() => fileRef.current?.click()} aria-label="导入清单">
+            导入
+          </button>
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/json,.json"
+            hidden
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void onImport(file);
+              event.target.value = "";
+            }}
+          />
           <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">
             {loading ? "刷新中…" : "刷新"}
           </button>
@@ -349,7 +604,7 @@ export function TaskPanel({
         </div>
       )}
       <div className="panel-toolbar">
-        {view === "list" && (
+        {view === "list" && sortMode === "time" && (
           <div className="panel-tabs" role="tablist" aria-label="任务状态">
             {STATUSES.map((item) => (
               <button
@@ -382,17 +637,27 @@ export function TaskPanel({
             筛选{activeFilters > 0 ? ` ${activeFilters}` : ""}
           </button>
           {view === "list" && (
-            <button
-              type="button"
-              className={`panel-toggle${selectMode ? " active" : ""}`}
-              aria-pressed={selectMode}
-              onClick={() => {
-                setSelectMode((value) => !value);
-                setSelected(new Set());
-              }}
-            >
-              {selectMode ? "退出多选" : "多选"}
-            </button>
+            <>
+              <button
+                type="button"
+                className={`panel-toggle${selectMode ? " active" : ""}`}
+                aria-pressed={selectMode}
+                onClick={() => {
+                  setSelectMode((value) => !value);
+                  setSelected(new Set());
+                }}
+              >
+                {selectMode ? "退出多选" : "多选"}
+              </button>
+              <button
+                type="button"
+                className={`panel-toggle${sortMode === "manual" ? " active" : ""}`}
+                aria-pressed={sortMode === "manual"}
+                onClick={toggleSortMode}
+              >
+                {sortMode === "manual" ? "手动排序" : "按时间排"}
+              </button>
+            </>
           )}
         </div>
         {showFilters && (
@@ -500,8 +765,13 @@ export function TaskPanel({
             <span role="columnheader">优先级</span>
             <span role="columnheader" aria-label="操作" />
           </div>
-          {visible.length === 0 ? (
+          {listEmpty ? (
             <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
+          ) : sortMode === "manual" ? (
+            <div className="panel-group" role="rowgroup">
+              <p className="manual-hint">拖动行首的 ⠿ 调整顺序，松手即保存。</p>
+              {rows.map(renderRow)}
+            </div>
           ) : (
             shownGroups.map((group) => (
               <div className={`panel-group group-${group.key}`} key={group.key} role="rowgroup">

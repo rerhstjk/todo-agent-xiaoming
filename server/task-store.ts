@@ -85,6 +85,8 @@ export interface TaskPatch {
   effort?: number | null;
   tags?: string[] | null;
   repeat?: Repeat | null;
+  /** 手动排序序号，仅面板「手动排序」模式使用。 */
+  position?: number | null;
   remind?: boolean | null;
   reminderAt?: string[] | null;
   subtasks?: Subtask[] | null;

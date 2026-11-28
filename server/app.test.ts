@@ -282,3 +282,68 @@ test("清单面板可以设置开始时间和提醒", async (t) => {
   const invalid = await request("PATCH", `/api/tasks/${task.id}`, { startDate: "11-28" });
   assert.equal(invalid.status, 400);
 });
+
+test("清单可以导出后再合并或覆盖导入，扩展字段不丢", async (t) => {
+  const { request } = await startTestApp(t);
+  const created = await request("POST", "/api/tasks", { title: "开会" });
+  await request("PATCH", `/api/tasks/${created.body.id}`, {
+    startDate: "2026-12-01",
+    startTime: "15:00",
+    priority: "high",
+    effort: 2,
+    tags: ["工作"],
+    note: "带上电脑和转接头",
+  });
+
+  const exported = await request("GET", "/api/tasks/export");
+  assert.equal(exported.status, 200);
+  assert.equal(exported.body.version, 1);
+  assert.equal(exported.body.tasks[0].note, "带上电脑和转接头");
+  assert.deepEqual(exported.body.tasks[0].tags, ["工作"]);
+
+  const merged = await request("POST", "/api/tasks/import", {
+    tasks: exported.body.tasks,
+    mode: "merge",
+  });
+  assert.equal(merged.status, 201);
+  assert.equal(merged.body.imported, 1);
+  assert.equal(merged.body.total, 2);
+
+  const list = await request("GET", "/api/tasks");
+  assert.equal(list.body.length, 2);
+  assert.notEqual(list.body[0].id, list.body[1].id);
+  assert.equal(list.body[1].title, "开会");
+  assert.equal(list.body[1].note, "带上电脑和转接头");
+
+  const replaced = await request("POST", "/api/tasks/import", {
+    tasks: [{ title: "只剩这一条" }],
+    mode: "replace",
+  });
+  assert.equal(replaced.status, 201);
+  const after = await request("GET", "/api/tasks");
+  assert.deepEqual(
+    after.body.map((task: { title: string }) => task.title),
+    ["只剩这一条"],
+  );
+
+  const invalid = await request("POST", "/api/tasks/import", { tasks: [] });
+  assert.equal(invalid.status, 400);
+});
+
+test("清单面板可以保存备注与手动排序序号", async (t) => {
+  const { request } = await startTestApp(t);
+  const first = await request("POST", "/api/tasks", { title: "第一项" });
+  const second = await request("POST", "/api/tasks", { title: "第二项" });
+
+  const patched = await request("PATCH", `/api/tasks/${first.body.id}`, {
+    note: "先做这个",
+    position: 2,
+  });
+  assert.equal(patched.status, 200);
+  assert.equal(patched.body.note, "先做这个");
+  assert.equal(patched.body.position, 2);
+
+  const moved = await request("PATCH", `/api/tasks/${second.body.id}`, { position: 1 });
+  assert.equal(moved.status, 200);
+  assert.equal(moved.body.position, 1);
+});

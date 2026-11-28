@@ -17,9 +17,13 @@ import {
   fetchTasks,
   setTaskDone,
   updateSubtasks,
+  updateTaskFields,
+  exportTasks,
+  importTasks,
   deleteTask,
   undoDelete,
   type ApiTask,
+  type TaskEditFields,
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
@@ -327,6 +331,63 @@ export default function App() {
     }
   }
 
+  async function editTaskFields(task: ApiTask, fields: TaskEditFields) {
+    try {
+      await updateTaskFields(task.id, fields);
+      setTasksError("");
+      notifyAgent(`已更新「${fields.title ?? task.title}」`);
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "保存任务失败。");
+    } finally {
+      void refreshTasks();
+    }
+  }
+
+  async function reorderTasks(ids: string[]) {
+    try {
+      await Promise.all(ids.map((id, index) => updateTaskFields(id, { position: index })));
+      setTasksError("");
+      notifyAgent("已保存手动排序");
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "保存排序失败。");
+    } finally {
+      void refreshTasks();
+    }
+  }
+
+  async function downloadTasks() {
+    try {
+      const payload = await exportTasks();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `xiaoming-tasks-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+      notifyAgent(`已导出 ${payload.tasks.length} 项任务`);
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "导出失败。");
+    }
+  }
+
+  async function importFile(file: File) {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as { tasks?: unknown[] } | unknown[];
+      const items = Array.isArray(parsed) ? parsed : parsed.tasks;
+      if (!Array.isArray(items) || items.length === 0) {
+        throw new Error("文件里没有可导入的任务。");
+      }
+      const result = await importTasks({ tasks: items, mode: "merge" });
+      setTasksError("");
+      notifyAgent(`已导入 ${result.imported} 项任务（合并模式）`);
+      await refreshTasks();
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "导入失败，请确认文件格式。");
+    }
+  }
+
   async function batchDone(items: ApiTask[]) {
     const open = items.filter((task) => !task.done);
     await Promise.allSettled(open.map((task) => setTaskDone(task.id, true)));
@@ -554,6 +615,10 @@ export default function App() {
           reminder={reminder}
           reminderOn={reminderOn}
           onToggleReminders={() => void toggleReminders()}
+          onEdit={editTaskFields}
+          onReorder={reorderTasks}
+          onExport={() => void downloadTasks()}
+          onImport={(file) => void importFile(file)}
         />
       </main>
     </div>

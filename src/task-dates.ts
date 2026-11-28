@@ -142,6 +142,34 @@ export function scheduleMoment(task: ApiTask): number | undefined {
   ).getTime();
 }
 
+export type UrgencyLevel = "overdue" | "now" | "soon" | "today" | "later" | "none";
+
+export type TaskUrgency = { level: UrgencyLevel; label: string };
+
+function spanText(ms: number): string {
+  const minutes = Math.max(1, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} 小时`;
+  const days = Math.round(hours / 24);
+  return `${days} 天`;
+}
+
+/**
+ * 紧急度：逾期 / 1 小时内 / 6 小时内 / 24 小时内 / 更远。
+ * 只考虑未完成任务；没有任何时间时不标颜色。
+ */
+export function urgency(task: ApiTask, now = Date.now()): TaskUrgency {
+  const moment = scheduleMoment(task);
+  if (task.done || moment === undefined) return { level: "none", label: "" };
+  const diff = moment - now;
+  if (diff < 0) return { level: "overdue", label: `逾期 ${spanText(-diff)}` };
+  if (diff <= 60 * 60_000) return { level: "now", label: `剩 ${spanText(diff)}` };
+  if (diff <= 6 * 60 * 60_000) return { level: "soon", label: `剩 ${spanText(diff)}` };
+  if (diff <= 24 * 60 * 60_000) return { level: "today", label: `剩 ${spanText(diff)}` };
+  return { level: "later", label: "" };
+}
+
 export function isOverdue(task: ApiTask): boolean {
   if (task.done) return false;
   const moment = scheduleMoment(task);

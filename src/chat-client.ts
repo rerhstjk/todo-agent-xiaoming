@@ -5,6 +5,8 @@ export type ApiTask = {
   title: string;
   done: boolean;
   note?: string;
+  /** 手动排序序号；只有面板「手动排序」模式会写。 */
+  position?: number;
   startDate?: string;
   startTime?: string;
   dueDate?: string;
@@ -98,6 +100,46 @@ export function updateSubtasks(
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ subtasks }),
+  });
+}
+
+/** 面板内联编辑：把标题、时间、优先级、工作量、备注一次性写回。 */
+export type TaskEditFields = {
+  title?: string;
+  startDate?: string | null;
+  startTime?: string | null;
+  priority?: "low" | "normal" | "high";
+  effort?: number | null;
+  note?: string;
+  position?: number;
+};
+
+export function updateTaskFields(id: string, fields: TaskEditFields): Promise<ApiTask> {
+  return request<ApiTask>(`/api/tasks/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(fields),
+  });
+}
+
+export type TaskExport = {
+  version: number;
+  exportedAt: string;
+  tasks: ApiTask[];
+};
+
+export function exportTasks(): Promise<TaskExport> {
+  return request<TaskExport>("/api/tasks/export");
+}
+
+export function importTasks(payload: {
+  tasks: unknown[];
+  mode?: "merge" | "replace";
+}): Promise<{ imported: number; total: number; mode: string }> {
+  return request("/api/tasks/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 

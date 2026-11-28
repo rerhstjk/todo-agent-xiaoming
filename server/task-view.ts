@@ -21,6 +21,8 @@ export interface PublicTask {
   /** 预计用时（小时）。 */
   effort?: number;
   note?: string;
+  /** 手动排序序号。 */
+  position?: number;
   tags?: string[];
   repeat?: Repeat;
   remind?: boolean;
@@ -37,6 +39,7 @@ export function toPublicTask(task: Task): PublicTask {
   if (task.priority) result.priority = task.priority;
   if (typeof task.effort === "number") result.effort = task.effort;
   if (task.note) result.note = task.note;
+  if (typeof task.position === "number") result.position = task.position;
   const tags = taskTags(task);
   if (tags.length > 0) result.tags = tags;
   const repeat = taskRepeat(task);

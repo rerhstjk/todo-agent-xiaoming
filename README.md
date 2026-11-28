@@ -1,5 +1,7 @@
 # 小明智能体 · 中文待办清单
 
+[![CI](https://github.com/rerhstjk/todo-agent-xiaoming/actions/workflows/ci.yml/badge.svg)](https://github.com/rerhstjk/todo-agent-xiaoming/actions/workflows/ci.yml)
+
 用中文对话管理待办：说「帮我记一下买牛奶」就新增一条，说「牛奶买好了」就标记完成，
 清单会实时同步到一个表格/日历面板。任务保存在本地 JSON 文件里，重启服务不会丢。
 
@@ -30,6 +32,13 @@
 - **重复任务**：每天 / 每周 / 每月；完成当前这条后自动生成下一次。
 - **清单面板**：表格按「今天 / 明天 / 本周 / 更多」分组，另有逾期、已完成；
   支持搜索（标题/备注/标签）、标签/时间/优先级/工作量组合筛选、批量完成/删除、拖动调宽侧栏。
+  点标题或行尾的铅笔可以就地改标题、开始时间、优先级、工作量和备注；
+  「手动排序」模式下拖动行首手柄调整顺序，刷新后仍保留。
+- **紧急度**：每行左侧按剩余时间着色（逾期红、1 小时内橙、6 小时内琥珀、24 小时内蓝），
+  并显示「剩 40 分钟 / 逾期 1 天」，一眼能看出哪些任务最该先处理。
+- **导入 / 导出**：面板右上角可把整份清单导出成 JSON，或把备份合并导入（id 冲突时自动换新 id）。
+- **固定时区**：日期、时刻、提醒和「今天/明天」统一按 `Asia/Shanghai` 解释，可用
+  `XIAOMING_TIMEZONE` 覆盖；部署在 UTC 机器上也不会错一天。
 - **月历**：周一起始的整月视图，日期格内直接显示任务条，点某天可查看并勾选。
 - **提醒**：任务级开关，设了提醒的任务带铃铛（悬停显示具体时刻）；默认开始前 30 分钟，
   也可以说「提前 10 分钟提醒我」。页面打开时由浏览器发系统通知，页面关闭不会提醒。
@@ -55,11 +64,14 @@ Windows PowerShell 用 `Copy-Item .env.example .env`。更多细节见[本地开
 ## 验证方式
 
 ```sh
-npm test          # 89 个离线测试：命令层、验收对话、API、模型工具循环
+npm test          # 92 个离线测试：命令层、验收对话、API、模型工具循环、时区
 npm run demo      # 不开服务、不花模型费用，在终端跑一遍验收对话与扩展场景
 npm run typecheck
 npm run build
 ```
+
+GitHub Actions 会在每次推送到 `main` 时跑 `npm ci` → `typecheck` → `test` → `build`
+（配置见 `.github/workflows/ci.yml`），公开仓库上可以直接看到绿勾/红叉。
 
 README 里的验收对话就是 `server/agent.test.ts` 的第一条测试，逐句断言清单状态：
 
@@ -88,6 +100,7 @@ README 里的验收对话就是 `server/agent.test.ts` 的第一条测试，逐�
 | `server/matching.ts` | 任务名匹配、歧义候选 |
 | `server/dates.ts` | 中文日期/时刻/相对时间解析 |
 | `server/selection.ts` | 时间范围、排序、逾期判断 |
+| `server/timezone.ts` | 固定时区（默认 Asia/Shanghai） |
 | `server/task-store.ts` | JSON 持久化（临时文件 + rename 原子写） |
 | `src/App.tsx` | 聊天界面、消息编辑、提醒开关 |
 | `src/TaskPanel.tsx` | 表格清单、搜索、筛选、批量操作 |
@@ -101,7 +114,7 @@ README 里的验收对话就是 `server/agent.test.ts` 的第一条测试，逐�
 - 语音输入依赖浏览器语音服务（Chrome/Edge），需要联网和麦克风权限，Firefox 会隐藏入口。
 - 单用户、无鉴权，只监听 `127.0.0.1`；多实例部署需要换数据库和锁。
 - 撤销与对话快照只存在进程内存（最近 20 条 / 100 个），重启服务后失效。
-- 具体时刻按服务器本地时区解释，跨时区协作不在当前范围。
+- 时区固定为 `Asia/Shanghai`（可用 `XIAOMING_TIMEZONE` 覆盖），跨时区协作不在当前范围。
 - 真实 DeepSeek 调用只做了离线假模型测试，接入密钥后的效果需要手动体验。
 
 ## 提交
