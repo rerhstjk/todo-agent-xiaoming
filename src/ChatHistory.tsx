@@ -10,6 +10,11 @@ interface ChatHistoryProps {
 export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<number | null>(null);
+  // 只有最新一轮的提问可以改；改更早的内容会连带回滚好几轮操作，容易让人误以为任务丢了。
+  const lastUserIndex = messages.reduce(
+    (last, message, index) => (message.role === "user" ? index : last),
+    -1,
+  );
   const [draft, setDraft] = useState("");
 
   useEffect(() => {
@@ -74,13 +79,13 @@ export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryPro
                     </button>
                   </footer>
                   <p className="message-edit-hint">
-                    发送后会回滚清单并从这条消息重新开始对话，后面的记录会被替换。
+                    发送后会先回滚清单到这条消息之前，再重新生成回复。
                   </p>
                 </form>
               ) : (
                 <>
                   <div>{message.content}</div>
-                  {message.role === "user" && !pending && (
+                  {index === lastUserIndex && !pending && (
                     <button
                       type="button"
                       className="edit-message"

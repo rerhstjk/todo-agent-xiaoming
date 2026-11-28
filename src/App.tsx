@@ -247,6 +247,14 @@ export default function App() {
   // 编辑历史里的一条用户消息：先回滚这条消息发送前的清单，再截断重发。
   async function editMessage(index: number, text: string) {
     if (pending) return;
+    const lastUserIndex = messages.reduce(
+      (last, message, current) => (message.role === "user" ? current : last),
+      -1,
+    );
+    if (index !== lastUserIndex) {
+      setError("只能修改最新一轮的提问，更早的记录不再支持回改。");
+      return;
+    }
     const target = messages[index];
     if (!target || target.role !== "user") return;
     if (!target.snapshotId) {
