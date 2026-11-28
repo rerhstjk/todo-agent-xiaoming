@@ -914,3 +914,23 @@ test("历史消息带发送时刻，模型不会用当前时间重算相对时�
   assert.ok(user && typeof user.content === "string");
   assert.match(user.content, /^\[发送于 09:14\] 提醒我两分钟后喝水$/);
 });
+
+test("预设的「记一件事」句子能一次解析开始时间、会前提醒和预计用时", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("记一下我明天下午三点开会，会前20分钟提醒我，预计开2个小时");
+
+  assert.match(reply, /已记下「开会」/);
+  assert.match(reply, /提醒已经设好：11月27日 14:40/);
+  assert.match(reply, /预计 2 小时/);
+
+  const [task] = store.list();
+  assert.ok(task);
+  assert.equal(task.title, "开会");
+  assert.equal(task.startDate, "2026-11-27");
+  assert.equal(task.startTime, "15:00");
+  assert.equal(task.dueDate, undefined);
+  assert.equal(task.remind, true);
+  assert.deepEqual(task.reminderAt, ["2026-11-27T14:40"]);
+  assert.equal(task.effort, 2);
+});

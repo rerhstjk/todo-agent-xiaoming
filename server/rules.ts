@@ -461,6 +461,10 @@ function createIntent(text: string, now: Date): Intent {
       startDate = momentDate;
       startTime = momentTime;
     }
+  } else if (reminderBefore && /会前|开始前/.test(reminderBefore.matched)) {
+    // 「会前 20 分钟提醒」说明这个时刻是开会时间，也就是任务的开始时间。
+    startDate = startDate ?? momentDate;
+    startTime = startTime ?? momentTime;
   } else {
     dueDate = momentDate;
     dueTime = momentTime;
@@ -493,7 +497,8 @@ function createIntent(text: string, now: Date): Intent {
     if (effortMatch) {
       effort = effortMatch.hours;
       value = value.replace(effortMatch.matched, " ");
-      // “预计半小时”这类前缀不属于标题，顺手清掉残留。
+      // “预计开 2 小时”“大概花半小时”里的动词不属于标题，顺手清掉残留。
+      value = value.replace(/(?:预计|大概|大约|估计|耗时|用时|需要)\s*(?:开|花|用|要)?\s*/g, " ");
       value = value.replace(
         /[，,、\s]*(?:预计|大概|大约|估计|耗时|用时|需要|花|要)\s*(?=[，,、\s。]|$)/g,
         " ",
@@ -502,6 +507,9 @@ function createIntent(text: string, now: Date): Intent {
   }
 
   value = stripCreatePrefixes(value);
+  value = value.replace(/^\s*我\s+/, " ");
+  value = value.replace(/[，,、]\s*(?=[，,、]|$)/g, " ");
+  value = value.replace(/\s+/g, " ");
   value = cleanTitle(value);
   if (!value) return { kind: "empty" };
 
@@ -526,7 +534,7 @@ function parseReminderBefore(
   text: string,
 ): { minutes: number; anchor: "start" | "due"; matched: string } | undefined {
   const match =
-    /(提前|开始前|截止前|到期前)\s*(\d{1,3}|[一二三四五六七八九十两]+|半)\s*(分钟|分|小时|钟头|天)\s*(?:提醒我?|给我?提醒|提醒)?/.exec(
+    /(提前|会前|开始前|截止前|到期前)\s*(\d{1,3}|[一二三四五六七八九十两]+|半)\s*(分钟|分|小时|钟头|天)\s*(?:提醒我?|给我?提醒|提醒)?/.exec(
       text,
     );
   if (!match) return undefined;
@@ -664,7 +672,7 @@ function splitCreateClauses(text: string): CreateClause[] | undefined {
     if (/^(或者|还是|或是)/.test(raw)) return undefined;
     const rest = raw.replace(CLAUSE_CONNECTOR, "").trim();
     // 「提醒我明天开会，提前 10 分钟提醒我」里的后半句是提醒设置，不是新任务。
-    if (/^(提前|开始前|截止前|到期前|提醒时间)/.test(rest)) return undefined;
+    if (/^(提前|会前|开始前|截止前|到期前|提醒时间)/.test(rest)) return undefined;
     const subtask = SUBTASK_CLAUSE.exec(rest);
     if (subtask) {
       const text = subtask[1]!.trim();
