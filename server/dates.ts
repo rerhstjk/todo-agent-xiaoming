@@ -5,6 +5,10 @@
 
 const WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
 
+export function toClockString(date: Date): string {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
 export function toDateString(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -202,6 +206,43 @@ function toNumber(raw: string | undefined): number | undefined {
 
 const CLOCK_SEARCH =
   /(凌晨|早上|上午|中午|下午|傍晚|晚上|夜里|今晚|明晚|明早|今天下午|明天下午)?\s*(\d{1,2}|[一二三四五六七八九十两]{1,3})\s*(?:点|时|[:：])\s*(半|\d{1,2}|[一二三四五六七八九十]{1,3})?\s*分?/;
+
+export interface RelativeMoment {
+  /** YYYY-MM-DD */
+  dueDate: string;
+  /** HH:mm；只说「三天后」这类整天数时为空，交给日期即可。 */
+  dueTime?: string;
+  /** 原文里匹配到的片段，用来从标题中删掉。 */
+  matched: string;
+}
+
+const RELATIVE_PATTERN =
+  /(\d{1,3}|[零〇一二三四五六七八九十两]{1,3}|半)\s*个?\s*(分钟|分|小时|钟头|天|日)\s*(?:之?后|以后)/;
+const HALF_HOUR_PATTERN = /(?:一|1)\s*个?\s*半\s*小时\s*(?:之?后|以后)/;
+
+/** 把「三分钟后」「半小时后」「两天后」换算成具体的截止日期/时刻。 */
+export function findRelativeMoment(text: string, now = new Date()): RelativeMoment | undefined {
+  if (HALF_HOUR_PATTERN.test(text)) {
+    const matched = HALF_HOUR_PATTERN.exec(text)?.[0] ?? "一个半小时后";
+    const target = new Date(now.getTime() + 90 * 60_000);
+    return { dueDate: toDateString(target), dueTime: toClockString(target), matched };
+  }
+  const match = RELATIVE_PATTERN.exec(text);
+  if (!match) return undefined;
+  const [matched, raw, unit] = match;
+  const value = toNumber(raw);
+  if (value === undefined) return undefined;
+
+  let minutes: number;
+  if (unit === "分钟" || unit === "分") minutes = value;
+  else if (unit === "小时" || unit === "钟头") minutes = raw === "半" ? 30 : value * 60;
+  else minutes = value * 24 * 60;
+  if (minutes <= 0 || minutes > 30 * 24 * 60) return undefined;
+
+  const target = new Date(now.getTime() + minutes * 60_000);
+  if (unit === "天" || unit === "日") return { dueDate: toDateString(target), matched };
+  return { dueDate: toDateString(target), dueTime: toClockString(target), matched };
+}
 
 export interface ClockMatch {
   /** HH:mm，例如“17:00”。 */

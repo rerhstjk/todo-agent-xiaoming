@@ -10,6 +10,7 @@ import {
   addDays,
   findClockTime,
   findDateText,
+  findRelativeMoment,
   formatChineseDate,
   startOfDay,
   toDateString,
@@ -304,7 +305,8 @@ export function parseIntent(text: string, now = new Date()): Intent {
 
   // 没写「记一下」但带了具体时刻或开始时间，通常是随口交代一件要做的事，
   // 例如「今晚5点去拿快递」「从明天开始整理资料」。确认不是查询后再当成新建任务。
-  if (findClockTime(value) || findStartAt(value, now)) return createIntent(value, now);
+  if (findClockTime(value) || findStartAt(value, now) || findRelativeMoment(value, now))
+    return createIntent(value, now);
 
   return { kind: "unknown" };
 }
@@ -325,8 +327,15 @@ function createIntent(text: string, now: Date): Intent {
   // 先削掉「帮我记一下」这类前缀，否则「记一下下周一开会」里的「一下下」
   // 会被日期解析误认成「下下周」。
   const tagged = extractTags(text);
-  let value = stripCreatePrefixes(tagged.text);
+  let value = tagged.text;
   const tags = tagged.tags;
+
+  // 相对时间要在剥离「一个」「提醒我」之前解析，否则「一个半小时后」会被
+  // 前缀规则吃掉「一个」，只剩「半小时后」。
+  const relative = findRelativeMoment(value, now);
+  if (relative) value = value.replace(relative.matched, " ");
+
+  value = stripCreatePrefixes(value);
 
   // 重复周期：每天 / 每周一 / 每月 15 号。只削掉「每」，留下「周一」「15 号」
   // 之类的写法给日期解析器处理。
@@ -357,15 +366,21 @@ function createIntent(text: string, now: Date): Intent {
   let dueDate: string | undefined;
   let dueTime: string | undefined;
 
+  // 「三分钟后」「半小时后」这类相对时间直接按当前时刻往后算，不用反问用户。
+  if (relative) {
+    dueDate = relative.dueDate;
+    dueTime = relative.dueTime;
+  }
+
   // 先找具体时刻（下午三点 / 今晚5点 / 17:30），再找日期。
   // 时刻里的“今晚/明晚”本身带天数信息，后面没有日期时用它兜底。
-  const clock = findClockTime(value);
+  const clock = dueDate ? undefined : findClockTime(value);
   if (clock) {
     dueTime = clock.value;
     value = value.replace(clock.matched, " ");
   }
 
-  const parsed = findDateText(value, now);
+  const parsed = dueDate ? undefined : findDateText(value, now);
   if (parsed) {
     dueDate = parsed.value;
     value = value.replace(parsed.matched, " ");

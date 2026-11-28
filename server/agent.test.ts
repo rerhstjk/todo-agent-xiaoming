@@ -803,3 +803,27 @@ test("模型工具也能撤销最近一次删除", () => {
   assert.match(undone.message, /已恢复「开会」/);
   assert.equal(store.list().length, 1);
 });
+
+test("三分钟后、半小时后这类相对时间直接换算，不用反问用户", async () => {
+  const { store, send } = fixture();
+
+  await send("提醒我三分钟后开会，高优先级");
+  const meeting = store.list()[0];
+  assert.equal(meeting?.title, "开会");
+  assert.equal(meeting?.dueDate, "2026-11-26");
+  assert.equal(meeting?.dueTime, "09:03");
+  assert.equal(meeting?.priority, "high");
+
+  await send("半小时后提醒我喝水");
+  assert.equal(store.list()[1]?.dueTime, "09:30");
+
+  await send("一个半小时后打电话");
+  assert.equal(store.list()[2]?.dueTime, "10:30");
+
+  await send("两小时后睡觉");
+  assert.equal(store.list()[3]?.dueTime, "11:00");
+
+  await send("三天后交报告");
+  assert.equal(store.list()[4]?.dueDate, "2026-11-29");
+  assert.equal(store.list()[4]?.dueTime, undefined);
+});
