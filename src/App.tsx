@@ -18,8 +18,6 @@ import {
   setTaskDone,
   updateSubtasks,
   updateTaskFields,
-  exportTasks,
-  importTasks,
   deleteTask,
   undoDelete,
   type ApiTask,
@@ -355,39 +353,6 @@ export default function App() {
     }
   }
 
-  async function downloadTasks() {
-    try {
-      const payload = await exportTasks();
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = `xiaoming-tasks-${new Date().toISOString().slice(0, 10)}.json`;
-      link.click();
-      URL.revokeObjectURL(url);
-      notifyAgent(`已导出 ${payload.tasks.length} 项任务`);
-    } catch (cause) {
-      setTasksError(cause instanceof Error ? cause.message : "导出失败。");
-    }
-  }
-
-  async function importFile(file: File) {
-    try {
-      const text = await file.text();
-      const parsed = JSON.parse(text) as { tasks?: unknown[] } | unknown[];
-      const items = Array.isArray(parsed) ? parsed : parsed.tasks;
-      if (!Array.isArray(items) || items.length === 0) {
-        throw new Error("文件里没有可导入的任务。");
-      }
-      const result = await importTasks({ tasks: items, mode: "merge" });
-      setTasksError("");
-      notifyAgent(`已导入 ${result.imported} 项任务（合并模式）`);
-      await refreshTasks();
-    } catch (cause) {
-      setTasksError(cause instanceof Error ? cause.message : "导入失败，请确认文件格式。");
-    }
-  }
-
   async function batchDone(items: ApiTask[]) {
     const open = items.filter((task) => !task.done);
     await Promise.allSettled(open.map((task) => setTaskDone(task.id, true)));
@@ -401,16 +366,6 @@ export default function App() {
     showUndo(items.length, `已删除 ${items.length} 项任务`);
     void refreshTasks();
   }
-
-  useEffect(() => {
-    if (pendingSuggestion) appendChoice.current?.focus();
-  }, [pendingSuggestion]);
-
-  // 选择期间用户把输入框清空了，就不用再问追加还是替换。
-  useEffect(() => {
-    if (pendingSuggestion && !draft.trim()) insertSuggestion(pendingSuggestion, "replace");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, pendingSuggestion]);
 
   function insertSuggestion(text: string, mode: "append" | "replace") {
     setDraft(mode === "append" ? `${draft.trimEnd()}${text}` : text);
@@ -638,8 +593,6 @@ export default function App() {
           onToggleReminders={() => void toggleReminders()}
           onEdit={editTaskFields}
           onReorder={reorderTasks}
-          onExport={() => void downloadTasks()}
-          onImport={(file) => void importFile(file)}
         />
       </main>
     </div>

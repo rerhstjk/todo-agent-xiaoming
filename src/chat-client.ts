@@ -122,27 +122,6 @@ export function updateTaskFields(id: string, fields: TaskEditFields): Promise<Ap
   });
 }
 
-export type TaskExport = {
-  version: number;
-  exportedAt: string;
-  tasks: ApiTask[];
-};
-
-export function exportTasks(): Promise<TaskExport> {
-  return request<TaskExport>("/api/tasks/export");
-}
-
-export function importTasks(payload: {
-  tasks: unknown[];
-  mode?: "merge" | "replace";
-}): Promise<{ imported: number; total: number; mode: string }> {
-  return request("/api/tasks/import", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-}
-
 export function deleteTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
 }

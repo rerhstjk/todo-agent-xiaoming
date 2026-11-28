@@ -17,7 +17,7 @@ npm run dev          # 打开 http://127.0.0.1:3000
 ## 验证
 
 ```sh
-npm test             # 95 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
+npm test             # 94 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
 npm run demo         # 不开服务、不花模型费用，直接在终端跑一遍验收对话和扩展场景
 npm run typecheck
 npm run build
@@ -108,8 +108,7 @@ HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只
 又让对话和面板都能管理更丰富的任务。
 
 `PATCH /api/tasks/:id` 还允许写 `startDate/startTime/priority/effort/tags/repeat/note/position/remind/reminderAt`，
-供面板就地编辑、手动排序和提醒开关使用；`GET /api/tasks/export` 导出整份清单，
-`POST /api/tasks/import` 支持 `mode: "merge" | "replace"` 合并或覆盖导入。
+供面板就地编辑、手动排序和提醒开关使用。
 
 `POST /api/tasks/undo` 用于撤销删除（面板上的「撤销」，或对话里说「撤销」）：服务进程内保留最近
 20 条被删任务的完整快照，恢复时沿用原 id、子任务完成状态、标签、时刻等字段；重启后清空。

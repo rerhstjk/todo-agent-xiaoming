@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ApiTask, TaskEditFields } from "./chat-client.ts";
 import { TaskCalendar } from "./TaskCalendar.tsx";
 import type { ReminderPermission } from "./use-reminders.ts";
@@ -84,8 +84,6 @@ export function TaskPanel({
   onToggleReminders,
   onEdit,
   onReorder,
-  onExport,
-  onImport,
 }: {
   tasks: ApiTask[];
   loading: boolean;
@@ -107,8 +105,6 @@ export function TaskPanel({
   onEdit: (task: ApiTask, fields: TaskEditFields) => void | Promise<void>;
   /** 手动排序：按新顺序回写 position。 */
   onReorder: (ids: string[]) => void | Promise<void>;
-  onExport: () => void;
-  onImport: (file: File) => void | Promise<void>;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
@@ -124,7 +120,6 @@ export function TaskPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  const fileRef = useRef<HTMLInputElement | null>(null);
   const activeFilters =
     (tagFilter !== "all" ? 1 : 0) +
     (timeFilter !== "all" ? 1 : 0) +
@@ -550,23 +545,6 @@ export function TaskPanel({
                   ? "提醒已开"
                   : "开启提醒"}
           </button>
-          <button className="ghost" onClick={onExport} aria-label="导出清单">
-            导出
-          </button>
-          <button className="ghost" onClick={() => fileRef.current?.click()} aria-label="导入清单">
-            导入
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (file) void onImport(file);
-              event.target.value = "";
-            }}
-          />
           <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">
             {loading ? "刷新中…" : "刷新"}
           </button>
