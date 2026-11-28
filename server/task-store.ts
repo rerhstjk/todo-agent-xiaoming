@@ -252,7 +252,11 @@ export function createJsonTaskStore(filename: string): TaskStore {
     if (isRepeat(draft.repeat)) task.repeat = draft.repeat;
     if (draft.remind === true) task.remind = true;
     const reminderAt = normalizeReminderAt(draft.reminderAt);
-    if (reminderAt.length > 0) task.reminderAt = reminderAt;
+    if (reminderAt.length > 0) {
+      task.reminderAt = reminderAt;
+      // 传了具体提醒时刻就等于打开了提醒，避免出现「有提醒时刻但没有开关」的半截数据。
+      task.remind = true;
+    }
 
     const subtasks = (draft.subtasks ?? [])
       .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))
@@ -286,6 +290,7 @@ export function createJsonTaskStore(filename: string): TaskStore {
         if (value === null) delete task[key];
         else task[key] = value;
       }
+      if (Array.isArray(task.reminderAt) && task.reminderAt.length > 0) task.remind = true;
 
       save(tasks);
       return task;

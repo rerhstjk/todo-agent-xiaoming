@@ -23,6 +23,8 @@ export interface PublicTask {
   note?: string;
   tags?: string[];
   repeat?: Repeat;
+  remind?: boolean;
+  reminderAt?: string[];
   subtasks?: Subtask[];
 }
 
@@ -39,6 +41,9 @@ export function toPublicTask(task: Task): PublicTask {
   if (tags.length > 0) result.tags = tags;
   const repeat = taskRepeat(task);
   if (repeat) result.repeat = repeat;
+  if (task.remind === true) result.remind = true;
+  if (Array.isArray(task.reminderAt) && task.reminderAt.length > 0)
+    result.reminderAt = [...task.reminderAt];
   const subtasks = taskSubtasks(task);
   if (subtasks.length > 0) result.subtasks = subtasks;
   return result;

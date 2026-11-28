@@ -217,7 +217,7 @@ export function TaskPanel({
             <div className="task-main">
               <span className="task-title">{task.title}</span>
               {repeat && <span className="repeat-tag">{repeat}</span>}
-              {task.remind === true && (
+              {(task.remind === true || (task.reminderAt?.length ?? 0) > 0) && (
                 <span
                   className="bell"
                   title={`已设置提醒：${reminderDetail(task)}`}

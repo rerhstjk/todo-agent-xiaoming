@@ -220,6 +220,8 @@ const createArgs = z.object({
   note: z.string().optional(),
   tags: z.array(z.string()).max(10).optional(),
   repeat: z.enum(["daily", "weekly", "monthly"]).optional(),
+  remind: z.boolean().optional(),
+  reminderAt: z.array(z.string()).max(5).optional(),
   subtasks: z.array(z.string()).max(20).optional(),
 });
 
@@ -288,6 +290,8 @@ export function runTool(
               note: args.note?.trim() || undefined,
               tags: normalizeTags(args.tags),
               repeat: args.repeat,
+              remind: args.remind === true || (args.reminderAt?.length ?? 0) > 0,
+              reminderAt: normalizeReminderAt(args.reminderAt),
               subtasks: args.subtasks?.map((item) => item.trim()).filter(Boolean),
             },
           },
@@ -380,6 +384,7 @@ export function runTool(
         const effort = parseEffort(args.effort);
         if (effort !== undefined) patch.effort = effort;
         if (args.note !== undefined) patch.note = args.note.trim() || null;
+        if (Array.isArray(patch.reminderAt) && patch.reminderAt.length > 0) patch.remind = true;
         if (args.remind !== undefined) patch.remind = args.remind;
         if (args.reminderAt !== undefined) {
           const reminderAt = normalizeReminderAt(args.reminderAt);

@@ -88,10 +88,10 @@ function clockString(timestamp: number): string {
  * 用户指定了提醒时刻就只按指定的来，否则开始前 30 分钟一次（老数据的截止时间也补一次）。
  */
 export function reminderPlan(task: ApiTask): TaskReminder[] {
-  if (task.remind !== true) return [];
   const custom = (task.reminderAt ?? []).filter(
     (value) => !Number.isNaN(new Date(value).getTime()),
   );
+  if (custom.length === 0 && task.remind !== true) return [];
   if (custom.length > 0) {
     return custom.map((value) => {
       const at = new Date(value).getTime();

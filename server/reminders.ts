@@ -55,8 +55,9 @@ export function reminderMomentLabel(iso: string): string {
  * - 否则开始前 30 分钟、截止前 10 分钟各一次（有开始/截止时间才有）。
  */
 export function taskReminderMoments(task: Task): ReminderMoment[] {
-  if (!taskRemind(task)) return [];
   const custom = taskReminderAt(task);
+  // 有具体提醒时刻就视为已开启（兼容早期只写了 reminderAt、没写 remind 的数据）。
+  if (!taskRemind(task) && custom.length === 0) return [];
   if (custom.length > 0) {
     return custom.map((iso) => ({
       at: new Date(iso).getTime(),

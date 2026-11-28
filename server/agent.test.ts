@@ -8,6 +8,7 @@ import type { ChatMessage } from "../shared/chat.ts";
 import { defaultActivity } from "./activity.ts";
 import { answer, createReply, systemPrompt } from "./agent.ts";
 import { createJsonTaskStore } from "./task-store.ts";
+import { toPublicTask } from "./task-view.ts";
 import { runTool } from "./tools.ts";
 
 // 2026-11-26 是周四，固定时间让日期相关的断言稳定。
@@ -944,4 +945,29 @@ test("过了开始时刻的任务会归入逾期，不用等到第二天", async
 
   const reply = await send("哪些任务逾期了？");
   assert.match(reply, /开会/);
+});
+
+test("工具只传 reminderAt 时也会打开提醒，并出现在任务数据里", () => {
+  const { store } = fixture();
+
+  const outcome = runTool(
+    store,
+    "create_task",
+    {
+      title: "开会",
+      startDate: "2026-11-28",
+      startTime: "15:30",
+      reminderAt: ["2026-11-28T15:21"],
+    },
+    NOW,
+  );
+
+  assert.equal(outcome.ok, true);
+  const task = store.list()[0];
+  assert.equal(task?.remind, true);
+  assert.deepEqual(task?.reminderAt, ["2026-11-28T15:21"]);
+
+  const publicTask = toPublicTask(task!);
+  assert.equal(publicTask.remind, true);
+  assert.deepEqual(publicTask.reminderAt, ["2026-11-28T15:21"]);
 });

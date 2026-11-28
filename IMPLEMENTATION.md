@@ -17,7 +17,7 @@ npm run dev          # 打开 http://127.0.0.1:3000
 ## 验证
 
 ```sh
-npm test             # 87 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环
+npm test             # 88 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环
 npm run demo         # 不开服务、不花模型费用，直接在终端跑一遍验收对话和扩展场景
 npm run typecheck
 npm run build
