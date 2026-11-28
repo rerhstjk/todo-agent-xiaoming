@@ -262,7 +262,7 @@ export default function App() {
       </header>
       <main style={{ "--panel-width": `${panelWidth}px` } as CSSProperties}>
         <section className="chat">
-          <ChatHistory messages={messages} pending={pending} onSelectPrompt={send} />
+          <ChatHistory messages={messages} pending={pending} />
           <div className="compose">
             <div className="suggestions" aria-label="预设提示词">
               {suggestions.map((item) => (

@@ -1,14 +1,12 @@
 import { useEffect, useRef } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
-import { welcomePrompts } from "./suggestions.ts";
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
   pending: boolean;
-  onSelectPrompt: (prompt: string) => void;
 }
 
-export function ChatHistory({ messages, pending, onSelectPrompt }: ChatHistoryProps) {
+export function ChatHistory({ messages, pending }: ChatHistoryProps) {
   const viewport = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
@@ -21,14 +19,6 @@ export function ChatHistory({ messages, pending, onSelectPrompt }: ChatHistoryPr
           <img src="/logo.png" alt="" />
           <h1>小明智能体</h1>
           <p>用中文说就行：记任务、报进度、问今天或本周的安排。</p>
-          <div className="examples">
-            {welcomePrompts.map((prompt) => (
-              <button key={prompt} onClick={() => onSelectPrompt(prompt)}>
-                {prompt}
-                <span aria-hidden="true">↗</span>
-              </button>
-            ))}
-          </div>
         </section>
       ) : (
         <div className="thread" role="log" aria-label="对话记录" aria-live="polite">

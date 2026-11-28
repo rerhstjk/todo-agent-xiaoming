@@ -20,4 +20,3 @@ export const suggestions: Suggestion[] = [
 ];
 
 /** 欢迎页用前几条即可，避免一屏塞太满。 */
-export const welcomePrompts = suggestions.slice(0, 4).map((item) => item.text);
