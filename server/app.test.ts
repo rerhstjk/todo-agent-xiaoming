@@ -257,3 +257,28 @@ test("编辑对话时可以回滚到那一轮对话之前的清单", async (t) =
     body: { error: "找不到这个对话快照，可能已经过期。" },
   });
 });
+
+test("清单面板可以设置开始时间和提醒", async (t) => {
+  const { request, filename } = await startTestApp(t);
+  const store = createJsonTaskStore(filename);
+  const task = store.create({ title: "开会" });
+
+  const patched = await request("PATCH", `/api/tasks/${task.id}`, {
+    startDate: "2026-11-28",
+    startTime: "15:30",
+    remind: true,
+    reminderAt: ["2026-11-28T15:21"],
+  });
+
+  assert.equal(patched.status, 200);
+  assert.deepEqual(patched.body, {
+    ...task,
+    startDate: "2026-11-28",
+    startTime: "15:30",
+    remind: true,
+    reminderAt: ["2026-11-28T15:21"],
+  });
+
+  const invalid = await request("PATCH", `/api/tasks/${task.id}`, { startDate: "11-28" });
+  assert.equal(invalid.status, 400);
+});

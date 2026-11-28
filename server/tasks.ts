@@ -11,12 +11,21 @@ const subtaskSchema = z.strictObject({
   done: z.boolean(),
 });
 const reminderMoment = z.string().regex(/^\d{4}-\d{2}-\d{2}T([01]\d|2[0-3]):[0-5]\d$/);
+const dateValue = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const clockValue = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
 const updateTaskSchema = createTaskSchema
   .partial()
   .extend({
     done: z.boolean().optional(),
     // 前端清单面板勾选子任务时，整组子任务一起回写。
     subtasks: z.array(subtaskSchema).max(50).optional(),
+    // 开始时间与提醒：面板和测试脚本都可以直接写这两个字段。
+    startDate: dateValue.optional(),
+    startTime: clockValue.optional(),
+    priority: z.enum(["low", "normal", "high"]).optional(),
+    effort: z.number().min(0).max(100).optional(),
+    tags: z.array(z.string().trim().min(1).max(20)).max(10).optional(),
+    repeat: z.enum(["daily", "weekly", "monthly"]).optional(),
     // 提醒开关与自定义提醒时刻（含逐个任务的小铃铛）。
     remind: z.boolean().optional(),
     reminderAt: z.array(reminderMoment).max(5).optional(),
@@ -47,7 +56,7 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     if (!input.success) {
       return res
         .status(400)
-        .json({ error: "请提供有效的 title、done、subtasks、remind 或 reminderAt 字段。" });
+        .json({ error: "请提供有效的 title、done、subtasks、开始时间、优先级、标签或提醒字段。" });
     }
 
     const before = tasks.get(req.params.id);
