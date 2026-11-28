@@ -65,5 +65,27 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     res.sendStatus(204);
   });
 
+  // 撤销删除：把最近删掉的一批任务原样恢复（含子任务、标签、时刻等扩展字段）。
+  router.post("/undo", (req, res) => {
+    const parsed = z
+      .object({ count: z.number().int().min(1).max(20).optional() })
+      .safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "count 必须是 1 到 20 之间的整数。" });
+    }
+    const count = parsed.data.count ?? 1;
+    const restored = [];
+    for (let index = 0; index < count; index += 1) {
+      const task = tasks.restoreLast?.();
+      if (!task) break;
+      restored.push(task);
+      activity.record({ kind: "restored", title: task.title });
+    }
+    if (restored.length === 0) {
+      return res.status(404).json({ error: "没有可以撤销的删除。" });
+    }
+    res.status(201).json(restored);
+  });
+
   return router;
 }

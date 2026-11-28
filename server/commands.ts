@@ -1,8 +1,15 @@
 import { randomUUID } from "node:crypto";
 import { normalizeForMatch, resolveTask } from "./matching.ts";
+import { nextDueDate, type Repeat } from "./recurrence.ts";
 import { selectTasks, type TaskScope } from "./selection.ts";
 import {
+  taskDueDate,
+  taskDueTime,
+  taskEffortHours,
+  taskPriority,
+  taskRepeat,
   taskSubtasks,
+  taskTags,
   type Priority,
   type Subtask,
   type Task,
@@ -24,6 +31,8 @@ export interface NewTaskInput {
   /** 预计用时（小时）。 */
   effort?: number;
   note?: string;
+  tags?: string[];
+  repeat?: Repeat;
   subtasks?: string[];
 }
 
@@ -36,7 +45,8 @@ export type Command =
   | { kind: "update"; hint: string; patch: TaskPatch }
   /** 带 taskId 时直接按 id 定位，避免同名的多条任务产生歧义。 */
   | { kind: "subtask"; hint: string; action: SubtaskAction; subtask: string; taskId?: string }
-  | { kind: "clearDone" };
+  | { kind: "clearDone" }
+  | { kind: "undo" };
 
 export type ResultStatus = "ok" | "unchanged" | "missing" | "ambiguous" | "invalid";
 
@@ -47,6 +57,7 @@ export type ResultReason =
   | "subtask-missing"
   | "subtask-already-done"
   | "no-fields"
+  | "nothing-to-undo"
   | "empty-list";
 
 export interface CommandResult {
@@ -72,6 +83,8 @@ export interface CommandResult {
   /** 改名前的标题，渲染「把 A 改成 B」时用。 */
   previousTitle?: string;
   cleared?: number;
+  /** 完成重复任务时自动生成的下一次任务。 */
+  nextTask?: Task;
   /** 适配层给出的说明，例如日期格式无法识别。 */
   message?: string;
 }
@@ -83,7 +96,7 @@ export function execute(store: TaskStore, command: Command, now = new Date()): C
     case "list":
       return list(store, command, now);
     case "setDone":
-      return setDone(store, command);
+      return setDone(store, command, now);
     case "remove":
       return remove(store, command);
     case "rename":
@@ -94,6 +107,8 @@ export function execute(store: TaskStore, command: Command, now = new Date()): C
       return subtask(store, command);
     case "clearDone":
       return clearDone(store, command);
+    case "undo":
+      return undo(store, command);
   }
 }
 
@@ -131,7 +146,11 @@ function list(
   };
 }
 
-function setDone(store: TaskStore, command: Extract<Command, { kind: "setDone" }>): CommandResult {
+function setDone(
+  store: TaskStore,
+  command: Extract<Command, { kind: "setDone" }>,
+  now: Date,
+): CommandResult {
   const tasks = store.list();
   const located = locate(command, tasks);
   if ("failed" in located) return located.failed;
@@ -149,13 +168,31 @@ function setDone(store: TaskStore, command: Extract<Command, { kind: "setDone" }
   }
 
   const updated = store.update(task.id, { done: command.done });
-  return {
+  const result: CommandResult = {
     command,
     status: "ok",
     changed: true,
     tasks: store.list(),
     task: updated ?? task,
   };
+
+  // 重复任务：完成当前这一条后，自动排好下一次，避免用户每天手动重记。
+  const repeat = updated && command.done ? taskRepeat(updated) : undefined;
+  if (updated && repeat) {
+    result.nextTask = store.create({
+      title: updated.title,
+      note: typeof updated.note === "string" ? updated.note : undefined,
+      dueDate: nextDueDate(taskDueDate(updated), repeat, now),
+      dueTime: taskDueTime(updated),
+      priority: taskPriority(updated),
+      effort: taskEffortHours(updated),
+      tags: taskTags(updated),
+      repeat,
+      subtasks: taskSubtasks(updated).map((item) => item.title),
+    });
+    result.tasks = store.list();
+  }
+  return result;
 }
 
 function remove(store: TaskStore, command: Extract<Command, { kind: "remove" }>): CommandResult {
@@ -318,6 +355,26 @@ function clearDone(
     changed: true,
     tasks: store.list(),
     cleared: done.length,
+  };
+}
+
+function undo(store: TaskStore, command: Extract<Command, { kind: "undo" }>): CommandResult {
+  const restored = store.restoreLast?.();
+  if (!restored) {
+    return {
+      command,
+      status: "unchanged",
+      changed: false,
+      tasks: store.list(),
+      reason: "nothing-to-undo",
+    };
+  }
+  return {
+    command,
+    status: "ok",
+    changed: true,
+    tasks: store.list(),
+    task: restored,
   };
 }
 

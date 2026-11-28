@@ -37,6 +37,38 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /api/tasks/undo:
+    post:
+      operationId: undoDeleteTask
+      summary: 撤销最近一次（或最近几次）删除
+      description: 只在服务进程内保留最近 20 条删除记录，重启后清空。
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                count:
+                  type: integer
+                  minimum: 1
+                  maximum: 20
+                  default: 1
+      responses:
+        "201":
+          description: 恢复出来的任务（原 id、子任务、标签等字段都会保留）
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Task" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: 没有可以撤销的删除
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/tasks/{id}:
     parameters:
       - name: id
@@ -95,7 +127,17 @@ components:
         dueTime:
           { type: string, description: 截止时刻，HH:mm（24 小时制），只有 dueDate 存在时才有意义 }
         priority: { type: string, enum: [low, normal, high] }
-        effort: { type: string, enum: [small, medium, large] }
+        effort: { type: number, description: 预计用时（小时），例如 0.5、2 }
+        repeat:
+          {
+            type: string,
+            enum: [daily, weekly, monthly],
+            description: 重复频率；完成一次后自动生成下一次,
+          }
+        tags:
+          type: array
+          description: 标签，最多 10 个，每个不超过 20 字
+          items: { type: string }
         note: { type: string, description: 备注 }
         subtasks:
           type: array

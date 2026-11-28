@@ -14,6 +14,7 @@ import {
   setTaskDone,
   updateSubtasks,
   deleteTask,
+  undoDelete,
   type ApiTask,
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
@@ -36,6 +37,8 @@ export default function App() {
   const [tasksLoading, setTasksLoading] = useState(true);
   const [tasksError, setTasksError] = useState("");
   const [panelNotice, setPanelNotice] = useState("");
+  const [undo, setUndo] = useState<{ count: number; label: string } | null>(null);
+  const undoTimer = useRef<number | undefined>(undefined);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem("xiaoming.panelWidth"));
     return Number.isFinite(saved) && saved >= 340 ? Math.min(720, saved) : 460;
@@ -68,6 +71,25 @@ export default function App() {
     setPanelNotice(message);
     window.clearTimeout(noticeTimer.current);
     noticeTimer.current = window.setTimeout(() => setPanelNotice(""), 4000);
+  }
+
+  function showUndo(count: number, label: string) {
+    setUndo({ count, label });
+    window.clearTimeout(undoTimer.current);
+    undoTimer.current = window.setTimeout(() => setUndo(null), 8000);
+  }
+
+  async function undoRemoved() {
+    if (!undo) return;
+    try {
+      const restored = await undoDelete(undo.count);
+      setUndo(null);
+      notifyAgent(`已通知小明：恢复了 ${restored.length} 项任务`);
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "撤销失败。");
+    } finally {
+      void refreshTasks();
+    }
   }
 
   const refreshTasks = useCallback(async () => {
@@ -170,11 +192,26 @@ export default function App() {
       await deleteTask(task.id);
       setTasksError("");
       notifyAgent(`已通知小明：删除「${task.title}」`);
+      showUndo(1, `已删除「${task.title}」`);
     } catch (cause) {
       setTasksError(cause instanceof Error ? cause.message : "删除任务失败。");
     } finally {
       void refreshTasks();
     }
+  }
+
+  async function batchDone(items: ApiTask[]) {
+    const open = items.filter((task) => !task.done);
+    await Promise.allSettled(open.map((task) => setTaskDone(task.id, true)));
+    notifyAgent(`已通知小明：完成 ${open.length} 项任务`);
+    void refreshTasks();
+  }
+
+  async function batchDelete(items: ApiTask[]) {
+    await Promise.allSettled(items.map((task) => deleteTask(task.id)));
+    notifyAgent(`已通知小明：删除 ${items.length} 项任务`);
+    showUndo(items.length, `已删除 ${items.length} 项任务`);
+    void refreshTasks();
   }
 
   useEffect(() => {
@@ -285,9 +322,17 @@ export default function App() {
               </div>
             )}
             {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
+              <div className="error-row" role="alert">
+                <p className="error">{error}</p>
+                <button
+                  type="button"
+                  className="retry"
+                  disabled={pending || !draft.trim()}
+                  onClick={() => void send(draft)}
+                >
+                  重试
+                </button>
+              </div>
             )}
             {speechError && (
               <p className="error" role="alert">
@@ -354,6 +399,10 @@ export default function App() {
           onDelete={removeTask}
           onRefresh={refreshTasks}
           notice={panelNotice}
+          undo={undo}
+          onUndo={() => void undoRemoved()}
+          onBatchDone={(items) => void batchDone(items)}
+          onBatchDelete={(items) => void batchDelete(items)}
         />
       </main>
     </div>

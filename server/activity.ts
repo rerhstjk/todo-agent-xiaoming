@@ -7,7 +7,13 @@
  * 记录只在内存里，重启即清空，不进入 data/tasks.json。
  */
 
-export type ActivityKind = "created" | "updated" | "completed" | "reopened" | "deleted";
+export type ActivityKind =
+  | "created"
+  | "updated"
+  | "completed"
+  | "reopened"
+  | "deleted"
+  | "restored";
 
 export interface ActivityEntry {
   at: number;
@@ -72,6 +78,8 @@ export function describeActivity(entry: ActivityEntry): string {
       return `删除了「${entry.title}」`;
     case "updated":
       return `修改了「${entry.title}」`;
+    case "restored":
+      return `恢复了「${entry.title}」`;
   }
 }
 

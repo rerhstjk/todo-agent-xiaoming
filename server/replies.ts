@@ -35,7 +35,7 @@ export function chatReply(result: CommandResult, now = new Date()): string {
     case "list":
       return listText(result, now);
     case "setDone":
-      return doneChat(result);
+      return doneChat(result, now);
     case "remove":
       return removeChat(result);
     case "rename":
@@ -46,6 +46,8 @@ export function chatReply(result: CommandResult, now = new Date()): string {
       return subtaskChat(result);
     case "clearDone":
       return clearDoneChat(result);
+    case "undo":
+      return undoChat(result);
   }
 }
 
@@ -64,7 +66,7 @@ export function toolReply(result: CommandResult, now = new Date()): ToolReply {
         data: result.tasks.map(toPublicTask),
       };
     case "setDone":
-      return doneTool(result);
+      return doneTool(result, now);
     case "remove":
       return removeTool(result);
     case "rename":
@@ -87,6 +89,8 @@ export function toolReply(result: CommandResult, now = new Date()): ToolReply {
         changed: result.changed,
         message: clearDoneChat(result),
       };
+    case "undo":
+      return undoTool(result);
   }
 }
 
@@ -263,7 +267,7 @@ function listText(result: CommandResult, now: Date): string {
   }
 }
 
-function doneChat(result: CommandResult): string {
+function doneChat(result: CommandResult, now: Date): string {
   const task = result.task;
   if (!task) return "没有找到这条任务。";
 
@@ -275,12 +279,12 @@ function doneChat(result: CommandResult): string {
   }
 
   if (result.command.kind === "setDone" && result.command.done) {
-    return `已把「${task.title}」标记为已完成。\n${pendingSummary(result.tasks)}`;
+    return `已把「${task.title}」标记为已完成。${nextRepeatLine(result, now)}\n${pendingSummary(result.tasks)}`;
   }
   return `已把「${task.title}」重新标记为待办。\n${pendingSummary(result.tasks)}`;
 }
 
-function doneTool(result: CommandResult): ToolReply {
+function doneTool(result: CommandResult, now: Date): ToolReply {
   const task = result.task;
   if (!task) return { ok: false, changed: false, message: "没有找到这条任务。" };
 
@@ -291,7 +295,7 @@ function doneTool(result: CommandResult): ToolReply {
         ? `「${task.title}」之前就已经完成了。`
         : `「${task.title}」本来就没有完成，不用重新打开。`;
   } else if (result.command.kind === "setDone" && result.command.done) {
-    message = `已把「${task.title}」标记为已完成。`;
+    message = `已把「${task.title}」标记为已完成。${nextRepeatLine(result, now)}`;
   } else {
     message = `已把「${task.title}」重新标记为待办。`;
   }
@@ -301,6 +305,30 @@ function doneTool(result: CommandResult): ToolReply {
     changed: result.changed,
     message: `${message}${pendingSummary(result.tasks)}`,
     data: toPublicTask(task),
+  };
+}
+
+/** 重复任务完成后，告诉用户下一次排到了哪天。 */
+function nextRepeatLine(result: CommandResult, now: Date): string {
+  const due = result.nextTask?.dueDate;
+  if (!due) return "";
+  return `下一次已排到${relativeDayLabel(due, now)}（${due}）。`;
+}
+
+function undoChat(result: CommandResult): string {
+  if (result.status === "unchanged" || !result.task) return "没有可以撤销的删除。";
+  return `已恢复「${result.task.title}」。\n${pendingSummary(result.tasks)}`;
+}
+
+function undoTool(result: CommandResult): ToolReply {
+  if (result.status === "unchanged" || !result.task) {
+    return { ok: false, changed: false, message: "没有可以撤销的删除。" };
+  }
+  return {
+    ok: true,
+    changed: true,
+    message: `已恢复「${result.task.title}」。${pendingSummary(result.tasks)}`,
+    data: toPublicTask(result.task),
   };
 }
 

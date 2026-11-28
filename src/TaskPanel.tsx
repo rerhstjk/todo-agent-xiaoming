@@ -63,26 +63,49 @@ export function TaskPanel({
   onDelete,
   onRefresh,
   notice,
+  undo,
+  onUndo,
+  onBatchDone,
+  onBatchDelete,
 }: {
   tasks: ApiTask[];
   loading: boolean;
   error: string;
   notice?: string;
+  /** 最近一次删除的提示与可撤销数量。 */
+  undo?: { count: number; label: string } | null;
   onToggle: (task: ApiTask) => void;
   onToggleSubtask: (task: ApiTask, subtaskId: string) => void;
   onDelete: (task: ApiTask) => void;
   onRefresh: () => void;
+  onUndo: () => void;
+  onBatchDone: (tasks: ApiTask[]) => void;
+  onBatchDelete: (tasks: ApiTask[]) => void;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
   const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [effortFilter, setEffortFilter] = useState<EffortFilter>("all");
+  const [query, setQuery] = useState("");
+  const [tagFilter, setTagFilter] = useState("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const today = toDateString(new Date());
   const weekEnd = endOfWeek();
 
-  // 时间 / 优先级 / 工作量三个筛选先叠加，再在结果里算状态数量。
+  const allTags = [...new Set(tasks.flatMap((task) => task.tags ?? []))].sort((a, b) =>
+    a.localeCompare(b, "zh-CN"),
+  );
+  const keyword = query.trim().toLowerCase();
+
+  // 搜索、标签、时间、优先级、工作量先叠加，再在结果里算状态数量。
   const pool = tasks.filter((task) => {
+    if (tagFilter !== "all" && !(task.tags ?? []).includes(tagFilter)) return false;
+    if (keyword) {
+      const haystack = [task.title, task.note ?? "", ...(task.tags ?? [])].join(" ").toLowerCase();
+      if (!haystack.includes(keyword)) return false;
+    }
+
     const priority = task.priority ?? "normal";
     if (priorityFilter !== "all" && priority !== priorityFilter) return false;
 
@@ -118,15 +141,46 @@ export function TaskPanel({
         }))
       : [{ key: status === "done" ? "done" : "overdue", tasks: visible }];
   const shownGroups = groups.filter((group) => group.tasks.length > 0);
+  const selectedTasks = visible.filter((task) => selected.has(task.id));
+
+  function toggleSelected(id: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function selectVisible() {
+    setSelected(
+      new Set(selectedTasks.length === visible.length ? [] : visible.map((task) => task.id)),
+    );
+  }
 
   function renderRow(task: ApiTask) {
     const subtasks = task.subtasks ?? [];
     const finished = subtasks.filter((item) => item.done).length;
     const overdue = isOverdue(task);
     const priority = task.priority ?? "normal";
+    const repeat =
+      task.repeat === "daily"
+        ? "每天"
+        : task.repeat === "weekly"
+          ? "每周"
+          : task.repeat === "monthly"
+            ? "每月"
+            : "";
     return (
       <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
         <div className="cell-title" role="cell">
+          <input
+            type="checkbox"
+            className="row-select"
+            aria-label={`选择「${task.title}」`}
+            checked={selected.has(task.id)}
+            onChange={() => toggleSelected(task.id)}
+          />
           <button
             className="check"
             aria-label={task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`}
@@ -138,6 +192,12 @@ export function TaskPanel({
           <div className="task-body">
             <div className="task-main">
               <span className="task-title">{task.title}</span>
+              {repeat && <span className="repeat-tag">{repeat}</span>}
+              {(task.tags ?? []).map((tag) => (
+                <span className="tag-pill" key={tag}>
+                  #{tag}
+                </span>
+              ))}
               {subtasks.length > 0 && (
                 <span className="subtask-count">
                   子任务 {finished}/{subtasks.length}
@@ -221,6 +281,14 @@ export function TaskPanel({
           {notice}
         </p>
       )}
+      {undo && (
+        <div className="panel-undo" role="status">
+          <span>{undo.label}</span>
+          <button type="button" onClick={onUndo}>
+            撤销
+          </button>
+        </div>
+      )}
       <div className="panel-toolbar">
         {view === "list" && (
           <div className="panel-tabs" role="tablist" aria-label="任务状态">
@@ -238,6 +306,27 @@ export function TaskPanel({
           </div>
         )}
         <div className="panel-filters">
+          <input
+            className="panel-search"
+            type="search"
+            value={query}
+            placeholder="搜索标题、备注或标签…"
+            aria-label="搜索任务"
+            onChange={(event) => setQuery(event.target.value)}
+          />
+          <select
+            aria-label="按标签筛选"
+            className="panel-select"
+            value={tagFilter}
+            onChange={(event) => setTagFilter(event.target.value)}
+          >
+            <option value="all">全部标签</option>
+            {allTags.map((tag) => (
+              <option key={tag} value={tag}>
+                #{tag}
+              </option>
+            ))}
+          </select>
           {view === "list" && (
             <select
               aria-label="按时间筛选"
@@ -281,6 +370,40 @@ export function TaskPanel({
         <p className="error" role="alert">
           {error}
         </p>
+      )}
+      {view === "list" && visible.length > 0 && (
+        <div className="panel-batch">
+          <button type="button" className="batch-select" onClick={selectVisible}>
+            {selectedTasks.length === visible.length ? "取消全选" : "全选当前"}
+          </button>
+          {selectedTasks.length > 0 && (
+            <>
+              <span className="batch-count">已选 {selectedTasks.length} 项</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onBatchDone(selectedTasks);
+                  setSelected(new Set());
+                }}
+              >
+                完成
+              </button>
+              <button
+                type="button"
+                className="danger"
+                onClick={() => {
+                  onBatchDelete(selectedTasks);
+                  setSelected(new Set());
+                }}
+              >
+                删除
+              </button>
+              <button type="button" className="batch-cancel" onClick={() => setSelected(new Set())}>
+                取消
+              </button>
+            </>
+          )}
+        </div>
       )}
       {view === "calendar" ? (
         <TaskCalendar tasks={pool} onToggle={onToggle} />

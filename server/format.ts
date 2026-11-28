@@ -1,11 +1,14 @@
 import { dayDiff, deadlineMoment, relativeDayLabel } from "./dates.ts";
 import { formatEffort } from "./effort.ts";
+import { REPEAT_LABELS } from "./recurrence.ts";
 import {
   taskDueDate,
   taskDueTime,
   taskEffortHours,
   taskPriority,
+  taskRepeat,
   taskSubtasks,
+  taskTags,
   type Priority,
   type Task,
 } from "./task-store.ts";
@@ -55,6 +58,12 @@ export function taskDetails(task: Task, now: Date): string {
 
   const effort = taskEffortHours(task);
   if (effort !== undefined) details.push(`预计 ${formatEffort(effort)}`);
+
+  const repeat = taskRepeat(task);
+  if (repeat) details.push(REPEAT_LABELS[repeat]);
+
+  const tags = taskTags(task);
+  if (tags.length > 0) details.push(`标签 ${tags.join("、")}`);
 
   const subtasks = taskSubtasks(task);
   if (subtasks.length > 0) {

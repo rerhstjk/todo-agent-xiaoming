@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname, join } from "node:path";
 import { z } from "zod";
 import { toEffortHours } from "./effort.ts";
+import { isRepeat, type Repeat } from "./recurrence.ts";
 
 export const priorities = ["low", "normal", "high"] as const;
 export type Priority = (typeof priorities)[number];
@@ -28,6 +29,10 @@ export interface Task {
   priority?: Priority;
   /** 预计用时（小时），0.25–100。 */
   effort?: number;
+  /** 自定义标签，例如「生活」「采购」。 */
+  tags?: string[];
+  /** 重复周期；有值时完成一条会生成下一次。 */
+  repeat?: Repeat;
   subtasks?: Subtask[];
   [key: string]: unknown;
 }
@@ -47,6 +52,8 @@ export interface NewTask {
   dueTime?: string;
   priority?: Priority;
   effort?: number;
+  tags?: string[];
+  repeat?: Repeat;
   subtasks?: string[];
 }
 
@@ -59,6 +66,8 @@ export interface TaskPatch {
   dueTime?: string | null;
   priority?: Priority | null;
   effort?: number | null;
+  tags?: string[] | null;
+  repeat?: Repeat | null;
   subtasks?: Subtask[] | null;
 }
 
@@ -68,6 +77,8 @@ export interface TaskStore {
   create(input: string | NewTask): Task;
   update(id: string, changes: TaskPatch): Task | undefined;
   remove(id: string): boolean;
+  /** 撤销最近一次删除；内存里只保留最近 20 条，重启后清空。 */
+  restoreLast?(): Task | undefined;
 }
 
 export function isDateString(value: unknown): value is string {
@@ -96,6 +107,31 @@ export function taskPriority(task: Task): Priority | undefined {
 /** 读任务的工作量（小时），兼容旧数据里的 small/medium/large。 */
 export function taskEffortHours(task: Task): number | undefined {
   return toEffortHours(task.effort);
+}
+
+const TAGS_MAX = 10;
+const TAG_MAX_LENGTH = 20;
+
+/** 规整标签：去掉 #、空白和重复项，最多 10 个、每个 20 字。 */
+export function normalizeTags(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const tag = raw.trim().replace(/^#+/, "").replace(/\s+/g, "").slice(0, TAG_MAX_LENGTH);
+    if (!tag) continue;
+    seen.add(tag);
+    if (seen.size >= TAGS_MAX) break;
+  }
+  return [...seen];
+}
+
+export function taskTags(task: Task): string[] {
+  return normalizeTags(task.tags);
+}
+
+export function taskRepeat(task: Task): Repeat | undefined {
+  return isRepeat(task.repeat) ? task.repeat : undefined;
 }
 
 export function taskSubtasks(task: Task): Subtask[] {
@@ -141,6 +177,9 @@ export function createJsonTaskStore(filename: string): TaskStore {
     renameSync(temporary, filename);
   }
 
+  // 被删掉的任务先留在内存里，供「撤销」恢复；不落盘，重启后就没有了。
+  const deleted: Task[] = [];
+
   function toTask(input: string | NewTask): Task {
     const draft = typeof input === "string" ? { title: input } : input;
     const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
@@ -150,6 +189,9 @@ export function createJsonTaskStore(filename: string): TaskStore {
     if (draft.priority) task.priority = draft.priority;
     const effort = toEffortHours(draft.effort);
     if (effort !== undefined) task.effort = effort;
+    const tags = normalizeTags(draft.tags);
+    if (tags.length > 0) task.tags = tags;
+    if (isRepeat(draft.repeat)) task.repeat = draft.repeat;
 
     const subtasks = (draft.subtasks ?? [])
       .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))
@@ -190,11 +232,25 @@ export function createJsonTaskStore(filename: string): TaskStore {
 
     remove(id) {
       const tasks = list();
-      const remaining = tasks.filter((task) => task.id !== id);
-      if (remaining.length === tasks.length) return false;
+      const task = tasks.find((item) => item.id === id);
+      if (!task) return false;
+      deleted.push(structuredClone(task));
+      if (deleted.length > 20) deleted.shift();
 
-      save(remaining);
+      save(tasks.filter((item) => item.id !== id));
       return true;
+    },
+
+    restoreLast() {
+      const task = deleted.pop();
+      if (!task) return undefined;
+      const tasks = list();
+      // 极端情况下同 id 已经被重新创建，换一个 id 避免覆盖。
+      const restored = tasks.some((item) => item.id === task.id)
+        ? { ...task, id: randomUUID() }
+        : task;
+      save([...tasks, restored]);
+      return restored;
     },
   };
 }

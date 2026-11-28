@@ -4,8 +4,15 @@ import { execute } from "./commands.ts";
 import { findClockTime, findDateText, parseDateString, toDateString } from "./dates.ts";
 import { findEffortHours, toEffortHours } from "./effort.ts";
 import { toolReply } from "./replies.ts";
+import { repeats, isRepeat, type Repeat } from "./recurrence.ts";
 import { taskScopes, type TaskScope } from "./selection.ts";
-import { priorities, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
+import {
+  normalizeTags,
+  priorities,
+  type Priority,
+  type TaskPatch,
+  type TaskStore,
+} from "./task-store.ts";
 
 /** 交给模型的工具清单，参数描述直接写中文，减少模型猜字段的情况。 */
 export const toolSchemas: ChatCompletionTool[] = [
@@ -40,6 +47,16 @@ export const toolSchemas: ChatCompletionTool[] = [
             description: "预计用时（小时），例如 2、0.5；用户没提就不要传，也不要自己编。",
           },
           note: { type: "string", description: "补充备注，可为空。" },
+          tags: {
+            type: "array",
+            items: { type: "string" },
+            description: '标签列表，例如 ["生活", "采购"]。',
+          },
+          repeat: {
+            type: "string",
+            enum: [...repeats],
+            description: "重复周期：daily 每天、weekly 每周、monthly 每月。一次性任务不要传。",
+          },
           subtasks: {
             type: "array",
             items: { type: "string" },
@@ -101,6 +118,16 @@ export const toolSchemas: ChatCompletionTool[] = [
             description: "新的预计用时（小时）；传 0 表示清除；不修改就不要传。",
           },
           note: { type: "string", description: "新的备注；传空字符串表示清除备注。" },
+          tags: {
+            type: "array",
+            items: { type: "string" },
+            description: "新的标签列表；传空数组表示清除标签。",
+          },
+          repeat: {
+            type: "string",
+            enum: [...repeats, "none"],
+            description: "新的重复周期；none 表示取消重复。",
+          },
         },
       },
     },
@@ -117,6 +144,19 @@ export const toolSchemas: ChatCompletionTool[] = [
         properties: {
           title: { type: "string", description: "要删除的任务标题或其中的关键词" },
         },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "undo_delete",
+      description:
+        "撤销最近一次删除，把刚删掉的任务恢复到清单里。用户说「撤销」「恢复刚才删掉的」时调用。",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {},
       },
     },
   },
@@ -150,6 +190,8 @@ const createArgs = z.object({
   priority: z.string().optional(),
   effort: z.union([z.number(), z.string()]).optional(),
   note: z.string().optional(),
+  tags: z.array(z.string()).max(10).optional(),
+  repeat: z.enum(["daily", "weekly", "monthly"]).optional(),
   subtasks: z.array(z.string()).max(20).optional(),
 });
 
@@ -166,6 +208,8 @@ const updateArgs = z.object({
   priority: z.string().optional(),
   effort: z.union([z.number(), z.string()]).optional(),
   note: z.string().optional(),
+  tags: z.array(z.string()).max(10).optional(),
+  repeat: z.string().optional(),
 });
 
 const deleteArgs = z.object({
@@ -208,6 +252,8 @@ export function runTool(
               priority: parsePriority(args.priority) ?? undefined,
               effort: parseEffort(args.effort) ?? undefined,
               note: args.note?.trim() || undefined,
+              tags: normalizeTags(args.tags),
+              repeat: args.repeat,
               subtasks: args.subtasks?.map((item) => item.trim()).filter(Boolean),
             },
           },
@@ -265,12 +311,20 @@ export function runTool(
         const effort = parseEffort(args.effort);
         if (effort !== undefined) patch.effort = effort;
         if (args.note !== undefined) patch.note = args.note.trim() || null;
+        if (args.tags !== undefined) {
+          const tags = normalizeTags(args.tags);
+          patch.tags = tags.length > 0 ? tags : null;
+        }
+        const repeat = parseRepeat(args.repeat);
+        if (repeat !== undefined) patch.repeat = repeat;
 
         if (Object.keys(patch).length === 0) {
           return { ok: false, changed: false, message: "这次没有需要修改的字段。" };
         }
         return toolReply(execute(store, { kind: "update", hint: args.title, patch }, now), now);
       }
+      case "undo_delete":
+        return toolReply(execute(store, { kind: "undo" }, now), now);
       case "delete_task": {
         const args = deleteArgs.parse(rawArgs);
         return toolReply(execute(store, { kind: "remove", hint: args.title }, now), now);
@@ -332,6 +386,14 @@ function parsePriority(value: string | undefined): Priority | null | undefined {
   if (["low", "低", "低优先级", "不急"].includes(normalized)) return "low";
   if (["normal", "medium", "中", "中优先级", "普通"].includes(normalized)) return "normal";
   return undefined;
+}
+
+function parseRepeat(value: string | undefined): Repeat | null | undefined {
+  if (value === undefined) return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized || normalized === "none" || normalized === "clear" || normalized === "无")
+    return null;
+  return isRepeat(normalized) ? normalized : undefined;
 }
 
 function parseEffort(value: unknown): number | null | undefined {

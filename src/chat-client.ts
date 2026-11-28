@@ -10,16 +10,33 @@ export type ApiTask = {
   priority?: "low" | "normal" | "high";
   /** 预计用时（小时）；旧数据里可能是 small/medium/large。 */
   effort?: number | string;
+  tags?: string[];
+  repeat?: "daily" | "weekly" | "monthly";
   subtasks?: { id: string; title: string; done: boolean }[];
 };
 
+const REPLY_TIMEOUT_MS = 60_000;
+
 export async function requestReply(messages: ChatMessage[]): Promise<string> {
-  const response = await fetch("/api/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages }),
-  });
-  const body: unknown = await response.json();
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), REPLY_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages }),
+      signal: controller.signal,
+    });
+  } catch {
+    if (controller.signal.aborted) {
+      throw new Error("等了 60 秒还没回复（模型可能超时），输入已保留，可以点重试。");
+    }
+    throw new Error("网络连接中断，输入已保留，可以点重试。");
+  } finally {
+    window.clearTimeout(timer);
+  }
+  const body: unknown = await response.json().catch(() => null);
   if (typeof body === "object" && body !== null) {
     if (response.ok && "reply" in body && typeof body.reply === "string") return body.reply;
     if ("error" in body && typeof body.error === "string") throw new Error(body.error);
@@ -71,4 +88,13 @@ export function updateSubtasks(
 
 export function deleteTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** 撤销删除；count 用于批量删除后一次恢复多条。 */
+export function undoDelete(count = 1): Promise<ApiTask[]> {
+  return request<ApiTask[]>("/api/tasks/undo", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ count }),
+  });
 }

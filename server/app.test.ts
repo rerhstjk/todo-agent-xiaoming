@@ -164,3 +164,34 @@ test("删除或修改不存在的任务时不会记成面板操作", async (t) =
 
   assert.deepEqual(defaultActivity.list(), []);
 });
+
+test("删除后可以从撤销接口恢复完整任务", async (t) => {
+  const { request } = await startTestApp(t);
+  const collection = "/api/tasks";
+
+  const created = await request("POST", collection, { title: "开会" });
+  const task = created.body as { id: string };
+  await request("PATCH", collection + "/" + task.id, {
+    subtasks: [{ id: "s1", title: "准备材料", done: true }],
+  });
+  assert.equal((await request("DELETE", collection + "/" + task.id)).status, 204);
+  assert.deepEqual(await request("GET", collection), { status: 200, body: [] });
+
+  const undone = await request("POST", collection + "/undo", { count: 1 });
+  assert.equal(undone.status, 201);
+  const [restored] = undone.body as {
+    id: string;
+    title: string;
+    done: boolean;
+    subtasks: { id: string; title: string; done: boolean }[];
+  }[];
+  assert.equal(restored?.id, task.id);
+  assert.equal(restored?.title, "开会");
+  assert.deepEqual(restored?.subtasks, [{ id: "s1", title: "准备材料", done: true }]);
+
+  // 再撤销一次已经没有记录了。
+  assert.deepEqual(await request("POST", collection + "/undo", {}), {
+    status: 404,
+    body: { error: "没有可以撤销的删除。" },
+  });
+});

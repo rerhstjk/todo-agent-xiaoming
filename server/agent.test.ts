@@ -671,3 +671,93 @@ test("没有任务上下文时，回答小时数会先问是哪条任务", async
   assert.match(reply, /要给哪条任务记预计用时/);
   assert.equal(store.list()[0]?.effort, undefined);
 });
+
+test("标签会从标题里剥离，并出现在清单回复中", async () => {
+  const { store, send } = fixture();
+  const reply = await send("记一下买牛奶 #生活 #采购，预计半小时");
+  assert.match(reply, /已记下「买牛奶」/);
+  const task = store.list()[0];
+  assert.equal(task?.title, "买牛奶");
+  assert.deepEqual(task?.tags, ["生活", "采购"]);
+  assert.equal(task?.effort, 0.5);
+
+  const list = await send("我有哪些任务？");
+  assert.match(list, /标签 生活、采购/);
+});
+
+test("每天重复的任务完成后会自动排好下一次", async () => {
+  const { store, send } = fixture();
+  const reply = await send("提醒我每天下午6点写日报");
+  assert.match(reply, /已记下「写日报」/);
+  const task = store.list()[0];
+  assert.equal(task?.repeat, "daily");
+  assert.equal(task?.dueTime, "18:00");
+  assert.equal(task?.dueDate, "2026-11-26");
+
+  const done = await send("写日报完成了");
+  assert.match(done, /下一次/);
+  const tasks = store.list();
+  assert.equal(tasks.length, 2);
+  const next = tasks.find((item) => !item.done);
+  assert.equal(next?.title, "写日报");
+  assert.equal(next?.dueDate, "2026-11-27");
+  assert.equal(next?.dueTime, "18:00");
+  assert.equal(next?.repeat, "daily");
+});
+
+test("每周一和每月 15 号都能解析成具体日期", async () => {
+  const { store, send } = fixture();
+  await send("提醒我每周一开会");
+  const weekly = store.list().find((task) => task.title === "开会");
+  assert.equal(weekly?.repeat, "weekly");
+  assert.equal(weekly?.dueDate, "2026-11-30");
+
+  await send("提醒我每月15号交房租");
+  const monthly = store.list().find((task) => task.title === "交房租");
+  assert.equal(monthly?.repeat, "monthly");
+  assert.equal(monthly?.dueDate, "2026-12-15");
+});
+
+test("删除后可以用「撤销」恢复", async () => {
+  const { store, send } = fixture();
+  await send("提醒我明天开会");
+  await send("开会删掉");
+  assert.equal(store.list().length, 0);
+
+  const reply = await send("撤销");
+  assert.match(reply, /已恢复「开会」/);
+  assert.equal(store.list().length, 1);
+});
+
+test("没有可撤销的删除时会明确说明", async () => {
+  const { send } = fixture();
+  const reply = await send("撤销");
+  assert.match(reply, /没有可以撤销的删除/);
+});
+
+test("模型超时抛错时退回规则引擎", async () => {
+  const { store } = fixture();
+  const client = scriptedClient(() => {
+    throw new Error("Request timed out");
+  });
+  const reply = await answer(
+    [{ role: "user", content: "记一下买牛奶" }],
+    store,
+    NOW,
+    "llm",
+    client,
+  );
+  assert.match(reply, /已记下「买牛奶」/);
+  assert.equal(store.list()[0]?.title, "买牛奶");
+});
+
+test("模型工具也能撤销最近一次删除", () => {
+  const { store } = fixture();
+  store.create({ title: "开会" });
+  const removed = runTool(store, "delete_task", { title: "开会" }, NOW);
+  assert.equal(removed.ok, true);
+
+  const undone = runTool(store, "undo_delete", {}, NOW);
+  assert.match(undone.message, /已恢复「开会」/);
+  assert.equal(store.list().length, 1);
+});

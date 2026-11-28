@@ -17,7 +17,8 @@ import {
 import { chatReply, createBatchChat } from "./replies.ts";
 import type { TaskScope } from "./selection.ts";
 import { findEffortHours, parseDurationAnswer } from "./effort.ts";
-import { type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
+import type { Repeat } from "./recurrence.ts";
+import { normalizeTags, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
 /**
  * 没配置 DEEPSEEK_API_KEY 时使用的规则引擎。它覆盖了题目验收对话里出现的说法，
@@ -36,6 +37,8 @@ type Intent =
       dueTime?: string;
       priority?: Priority;
       effort?: number;
+      tags?: string[];
+      repeat?: Repeat;
     }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
@@ -45,6 +48,7 @@ type Intent =
   | { kind: "subtaskUnclear" }
   | { kind: "clearDone" }
   | { kind: "activity" }
+  | { kind: "undo" }
   | { kind: "greeting" }
   | { kind: "help" }
   | { kind: "empty" }
@@ -164,6 +168,15 @@ export function parseIntent(text: string, now = new Date()): Intent {
   }
 
   if (CLEAR_DONE_WORDS.test(value)) return { kind: "clearDone" };
+
+  // 「撤销刚才的删除」「撤回」：恢复最近删掉的任务，不是重新打开。
+  if (
+    /^(?:撤销|撤回)(?:刚才|刚刚)?(?:的)?(?:删除|删掉)?[。！!]?$/.test(value) ||
+    /^恢复(?:刚才|刚刚)(?:删除|删掉)(?:的|了)?[。！!]?$/.test(value) ||
+    /^undo$/i.test(value)
+  ) {
+    return { kind: "undo" };
+  }
 
   // 「大概 2 小时」：在回答上一条任务大概要花多久。
   const duration = parseDurationAnswer(value);
@@ -309,7 +322,29 @@ function listScope(text: string): TaskScope {
 function createIntent(text: string, now: Date): Intent {
   // 先削掉「帮我记一下」这类前缀，否则「记一下下周一开会」里的「一下下」
   // 会被日期解析误认成「下下周」。
-  let value = stripCreatePrefixes(text);
+  const tagged = extractTags(text);
+  let value = stripCreatePrefixes(tagged.text);
+  const tags = tagged.tags;
+
+  // 重复周期：每天 / 每周一 / 每月 15 号。只削掉「每」，留下「周一」「15 号」
+  // 之类的写法给日期解析器处理。
+  let repeat: Repeat | undefined;
+  let monthlyDay: number | undefined;
+  if (/每天|每日/.test(value)) {
+    repeat = "daily";
+    value = value.replace(/每天|每日/g, " ");
+  } else if (/每(?:周|星期|礼拜)[一二三四五六日天]/.test(value)) {
+    repeat = "weekly";
+    value = value.replace(/每(?=(?:周|星期|礼拜)[一二三四五六日天])/, "");
+  } else if (/每(?:周|星期|礼拜)/.test(value)) {
+    repeat = "weekly";
+    value = value.replace(/每(?:周|星期|礼拜)/g, " ");
+  } else if (/每月/.test(value)) {
+    repeat = "monthly";
+    const matched = /每月\s*(\d{1,2})\s*[号日]/.exec(value);
+    if (matched) monthlyDay = Number(matched[1]);
+    value = value.replace(/每月\s*(?:\d{1,2}\s*[号日])?/g, " ");
+  }
   let dueDate: string | undefined;
   let dueTime: string | undefined;
 
@@ -345,6 +380,20 @@ function createIntent(text: string, now: Date): Intent {
     }
   }
 
+  // 「每月 15 号」没有完整日期，按今天之后最近的 15 号算。
+  if (monthlyDay !== undefined && !dueDate) {
+    const today = startOfDay(now);
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const days = new Date(year, month + 1, 0).getDate();
+    let candidate = new Date(year, month, Math.min(monthlyDay, days));
+    if (candidate.getTime() < today.getTime()) {
+      const nextDays = new Date(year, month + 2, 0).getDate();
+      candidate = new Date(year, month + 1, Math.min(monthlyDay, nextDays));
+    }
+    dueDate = toDateString(candidate);
+  }
+
   let priority: Priority | undefined;
   if (/(高优先级|很重要|重要|紧急|特急|加急|优先)/.test(value)) priority = "high";
   else if (/(低优先级|不急|不着急|随时)/.test(value)) priority = "low";
@@ -372,7 +421,32 @@ function createIntent(text: string, now: Date): Intent {
   value = cleanTitle(value);
   if (!value) return { kind: "empty" };
 
-  return { kind: "create", title: value.slice(0, 200), dueDate, dueTime, priority, effort };
+  return {
+    kind: "create",
+    title: value.slice(0, 200),
+    dueDate,
+    dueTime,
+    priority,
+    effort,
+    tags: tags.length > 0 ? tags : undefined,
+    repeat,
+  };
+}
+
+/** 从「记一下买牛奶 #生活 #采购」「标签：生活、采购」里取出标签并从标题剥离。 */
+function extractTags(text: string): { text: string; tags: string[] } {
+  let value = text;
+  const tags: string[] = [];
+  value = value.replace(/#([^\s#，,。；;、]+)/g, (_match, tag: string) => {
+    tags.push(tag);
+    return " ";
+  });
+  const labeled = /(?:标签|tag)[：:]\s*([^，,。；;]+)/i.exec(value);
+  if (labeled) {
+    for (const part of labeled[1]!.split(/[、，,\s]+/)) tags.push(part);
+    value = value.replace(labeled[0], " ");
+  }
+  return { text: value, tags: normalizeTags(tags) };
 }
 
 function stripCreatePrefixes(value: string): string {
@@ -472,6 +546,8 @@ function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date):
       dueTime: parsed.dueTime,
       priority: parsed.priority,
       effort: parsed.effort,
+      tags: parsed.tags,
+      repeat: parsed.repeat,
     };
     const result = execute(store, { kind: "create", input }, now);
     results.push(result);
@@ -526,6 +602,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
               dueTime: intent.dueTime,
               priority: intent.priority,
               effort: intent.effort,
+              tags: intent.tags,
+              repeat: intent.repeat,
             },
           },
           now,
@@ -589,6 +667,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       return chatReply(execute(store, { kind: "clearDone" }, now), now);
     case "activity":
       return activityReply(now);
+    case "undo":
+      return chatReply(execute(store, { kind: "undo" }, now), now);
     case "greeting":
       return greeting(store, now);
     case "help":
@@ -660,7 +740,10 @@ const HELP_TEXT = [
   "· 取快递删掉 —— 删除任务",
   "· 今天有哪些任务到期 —— 查看今天到期的任务",
   "· 把买牛奶改成买酸奶 —— 修改标题",
-  "另外还支持高/低优先级、小/中/大工作量和子任务。",
+  "· 提醒我每周一开会 —— 重复任务（每天/每周/每月）",
+  "· 记一下买牛奶 #生活 —— 给任务加标签",
+  "· 撤销 —— 恢复刚刚删掉的任务",
+  "另外还支持高/低优先级、预计用时（小时）和子任务。",
 ].join("\n");
 
 const UNKNOWN_TEXT = [
