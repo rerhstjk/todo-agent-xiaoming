@@ -76,7 +76,7 @@ async function askModel(
     { role: "system", content: systemPrompt(now) },
     ...messages.slice(-20).map((message): ChatCompletionMessageParam => ({
       role: message.role,
-      content: message.content,
+      content: withSendTime(message),
     })),
   ];
 
@@ -129,6 +129,17 @@ async function askModel(
   }
 }
 
+/**
+ * 在用户消息前标上发送时刻。模型看到「两分钟后」时，必须相对这条消息的时间换算，
+ * 而不是相对「现在」重算——否则过几分钟再聊，历史里的相对时间会被误判成写错了。
+ */
+function withSendTime(message: ChatMessage): string {
+  if (message.role !== "user" || !message.at) return message.content;
+  const at = new Date(message.at);
+  if (Number.isNaN(at.getTime())) return message.content;
+  return `[发送于 ${toClockString(at)}] ${message.content}`;
+}
+
 function parseArguments(raw: string | undefined): unknown {
   if (!raw) return {};
   try {
@@ -152,6 +163,7 @@ export function systemPrompt(now: Date): string {
   return [
     "你是「小明」，一个中文待办清单智能体，帮用户管理任务。",
     `现在是 ${formatChineseDate(now)} ${toClockString(now)}。`,
+    "用户消息开头的 [发送于 HH:mm] 是那条消息的发送时刻。「两分钟后」「半小时后」这类相对时间要相对发送时刻换算，不要用当前的「现在」重算。",
     "",
     "工作要求：",
     "1. 只用中文回答，口吻自然、简洁，像朋友聊天，最多 4 句话。不要使用 Markdown 标题、代码块或加粗。",
@@ -168,6 +180,7 @@ export function systemPrompt(now: Date): string {
     "12. 工作量以小时计。创建任务时用户没提预计用时，先问一句「这项大概要花多久？」，不要自己编；用户回答「大概 2 小时」时用 update_task 的 effort 补上（单位小时，半小时传 0.5）。",
     "13. 用户说「从明天开始」「明天下午三点开始」「9 点开始」时，用 startDate/startTime 记录开始时间；同一句里如果还有「周五交」之类的截止说法，再同时传 dueDate。不要把开始时间当成截止时间。",
     "14. 提醒默认是「开始前 30 分钟 + 截止前 10 分钟」，但只有用户说要提醒时才打开。创建带时间的任务后，问一句「要不要给这项设个提醒？」；用户同意就用 update_task 传 remind=true，不需要就继续。用户说「提前 10 分钟提醒」时，把那个时刻换算成 YYYY-MM-DDTHH:mm 传给 reminderAt。清单里设了提醒的任务会带铃铛，不要凭空说有提醒。",
+    "15. 历史消息里的相对时间在当时已经按发送时刻换算成具体日期/时刻并写进清单。之后继续聊别的话题时，即使「现在」已经过了那个时刻，也不要说「刚才写错了」「应该是现在+2 分钟」，不要主动提议修改已有任务的时间；只有用户明确要求改时间时才调用 update_task。",
     ...(panelActivity.length > 0
       ? [
           "",
@@ -193,6 +206,10 @@ export function systemPrompt(now: Date): string {
     "助手：（调用 create_task title=写周报）已记下「写周报」。这项大概要花多久？回「大概 2 小时」就行。",
     "用户：大概 2 小时",
     "助手：（调用 update_task title=写周报 effort=2）已把「写周报」的预计用时设为 2 小时。",
+    "用户：[发送于 14:14] 提醒我两分钟后喝水",
+    "助手：（调用 create_task title=喝水 startDate=今天 startTime=14:16）已记下「喝水」，14:16 开始提醒你。",
+    "用户：买牛奶这个删掉吧",
+    "助手：（调用 delete_task title=买牛奶）已删掉「买牛奶」。不要因为现在时间变了，就去改刚才喝水任务的时间。",
     "用户：从明天下午三点开始写报告",
     "助手：（调用 create_task title=写报告 startDate=明天 startTime=15:00）已记下「写报告」，从明天 15:00 开始。要不要给这项设个提醒？",
     "用户：要，提前 10 分钟",

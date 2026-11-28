@@ -212,13 +212,20 @@ export default function App() {
     if (!content) return;
     if (listening) stopSpeech();
     setSpeechError("");
-    const outgoing: UiMessage[] = [...base, { role: "user", content }];
+    const outgoing: UiMessage[] = [
+      ...base,
+      { role: "user", content, at: new Date().toISOString() },
+    ];
     setMessages(outgoing);
     setPending(true);
     setError("");
     try {
       const { reply: answer, snapshotId } = await requestReply(
-        outgoing.map(({ role, content: text }) => ({ role, content: text })),
+        outgoing.map(({ role, content: text, at }) => ({
+          role,
+          content: text,
+          ...(at ? { at } : {}),
+        })),
       );
       const withSnapshot = outgoing.map((message, position) =>
         position === outgoing.length - 1 ? { ...message, snapshotId } : message,

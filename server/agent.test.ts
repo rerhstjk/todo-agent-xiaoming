@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import type { ChatMessage } from "../shared/chat.ts";
 import { defaultActivity } from "./activity.ts";
 import { answer, createReply, systemPrompt } from "./agent.ts";
@@ -874,4 +875,42 @@ test("也可以直接说「给开会设提醒」", async () => {
   const reply = await send("给开会设提醒");
   assert.match(reply, /打开提醒/);
   assert.equal(store.list()[0]?.remind, true);
+});
+
+test("历史消息带发送时刻，模型不会用当前时间重算相对时间", async () => {
+  const { store } = fixture();
+  let seen: ChatCompletionMessageParam[] = [];
+  const client = {
+    chat: {
+      completions: {
+        async create(args: { messages: ChatCompletionMessageParam[] }) {
+          seen = args.messages;
+          return { choices: [{ message: { content: "好" } }] };
+        },
+      },
+    },
+  } as unknown as InjectedClient;
+
+  await answer(
+    [
+      {
+        role: "user",
+        content: "提醒我两分钟后喝水",
+        at: new Date(2026, 10, 26, 9, 14).toISOString(),
+      },
+    ],
+    store,
+    new Date(2026, 10, 26, 9, 26),
+    "llm",
+    client,
+  );
+
+  const system = seen.find((message) => message.role === "system");
+  assert.ok(system && typeof system.content === "string");
+  assert.match(system.content, /发送时刻/);
+  assert.match(system.content, /不要主动提议修改/);
+
+  const user = seen.find((message) => message.role === "user");
+  assert.ok(user && typeof user.content === "string");
+  assert.match(user.content, /^\[发送于 09:14\] 提醒我两分钟后喝水$/);
 });
