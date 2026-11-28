@@ -57,6 +57,9 @@ const GROUP_META: Record<DueBucket | "done", { label: string }> = {
 
 const OPEN_GROUPS: Exclude<DueBucket, "overdue">[] = ["today", "tomorrow", "week", "more"];
 
+const HOURS = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, index) => String(index * 5).padStart(2, "0"));
+
 type EditDraft = {
   title: string;
   startDate: string;
@@ -501,20 +504,49 @@ export function TaskPanel({
             </label>
             <label>
               开始时刻
-              <input
-                type="time"
-                title="点击选择时刻"
-                step="60"
-                value={draft.startTime}
-                onClick={(event) => {
-                  try {
-                    event.currentTarget.showPicker?.();
-                  } catch {
-                    // 浏览器不支持或被拦截时仍可手动输入。
-                  }
-                }}
-                onChange={(event) => setDraft({ ...draft, startTime: event.target.value })}
-              />
+              <span className="time-selects">
+                <select
+                  aria-label="开始时刻的小时"
+                  value={draft.startTime ? draft.startTime.slice(0, 2) : ""}
+                  onChange={(event) => {
+                    const hour = event.target.value;
+                    const minute = draft.startTime ? draft.startTime.slice(3, 5) : "";
+                    setDraft({
+                      ...draft,
+                      startTime: hour && minute ? `${hour}:${minute}` : "",
+                    });
+                  }}
+                >
+                  <option value="">时</option>
+                  {HOURS.map((hour) => (
+                    <option value={hour} key={hour}>
+                      {hour}
+                    </option>
+                  ))}
+                </select>
+                <span className="time-colon" aria-hidden="true">
+                  :
+                </span>
+                <select
+                  aria-label="开始时刻的分钟"
+                  value={draft.startTime ? draft.startTime.slice(3, 5) : ""}
+                  onChange={(event) => {
+                    const minute = event.target.value;
+                    const hour = draft.startTime ? draft.startTime.slice(0, 2) : "";
+                    setDraft({
+                      ...draft,
+                      startTime: hour && minute ? `${hour}:${minute}` : "",
+                    });
+                  }}
+                >
+                  <option value="">分</option>
+                  {MINUTES.map((minute) => (
+                    <option value={minute} key={minute}>
+                      {minute}
+                    </option>
+                  ))}
+                </select>
+              </span>
             </label>
             <label>
               优先级
