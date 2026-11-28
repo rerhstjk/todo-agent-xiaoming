@@ -25,7 +25,7 @@ npm run dev
 | -------------------------------------------- | ------------------------------------------ |
 | [src/App.tsx](src/App.tsx)                   | 聊天界面，发送当前页面的对话历史并显示回复 |
 | [server/index.ts](server/index.ts)           | 接入智能体与任务存储，启动服务             |
-| [server/agent.ts](server/agent.ts)           | 候选人实现入口，接收消息数组，返回回复文本 |
+| [server/agent.ts](server/agent.ts)           | 智能体入口：模式选择、DeepSeek 工具循环与规则引擎回退 |
 | [server/model.ts](server/model.ts)           | 服务端 DeepSeek 客户端与模型配置           |
 | [server/tasks.ts](server/tasks.ts)           | 任务 API 的输入校验和 HTTP 响应            |
 | [server/app.ts](server/app.ts)               | 接收对话历史，调用智能体并挂载任务 API     |
@@ -42,7 +42,7 @@ curl -sS http://127.0.0.1:3000/api/chat \
   -d '{"messages":[{"role":"user","content":"你好"}]}'
 ```
 
-初始响应为 `{"reply":"你好，欢迎使用小明智能体"}`。后续请求可在 `messages` 中按顺序传入之前的用户消息和小明的回复，再追加最新的用户消息。
+回复由规则引擎或模型生成。把最后一条消息换成 `帮我记一下买牛奶`，会新增一条待办。后续请求可在 `messages` 中按顺序传入之前的用户消息和小明的回复，再追加最新的用户消息。
 
 创建一条任务，然后检查列表。
 
