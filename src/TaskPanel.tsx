@@ -84,7 +84,6 @@ export function TaskPanel({
   onToggleReminders,
   onEdit,
   onReorder,
-  onClearOrder,
   onAddSubtask,
 }: {
   tasks: ApiTask[];
@@ -107,8 +106,6 @@ export function TaskPanel({
   onEdit: (task: ApiTask, fields: TaskEditFields) => void | Promise<void>;
   /** 手动排序：按新顺序回写 position。 */
   onReorder: (ids: string[]) => void | Promise<void>;
-  /** 清除手动顺序，恢复按开始时间排序。 */
-  onClearOrder: () => void | Promise<void>;
   /** 在编辑表单里直接给任务加一条子任务。 */
   onAddSubtask: (task: ApiTask, title: string) => void | Promise<void>;
 }) {
@@ -122,10 +119,11 @@ export function TaskPanel({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showFilters, setShowFilters] = useState(false);
   const [selectMode, setSelectMode] = useState(false);
-  const [sortMode, setSortMode] = useState<"time" | "manual">("time");
+  const [sorting, setSorting] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [previewRows, setPreviewRows] = useState<ApiTask[] | null>(null);
   const [subtaskDraft, setSubtaskDraft] = useState("");
   const activeFilters =
     (tagFilter !== "all" ? 1 : 0) +
@@ -169,7 +167,6 @@ export function TaskPanel({
     return true;
   });
 
-  const hasManualOrder = pool.some((task) => typeof task.position === "number");
   const sorted = [...pool].sort(compareTasks);
   const openTasks = sorted.filter((task) => !task.done && !isOverdue(task));
   const overdueTasks = sorted.filter((task) => isOverdue(task));
@@ -198,11 +195,9 @@ export function TaskPanel({
         (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
         compareTasks(a, b),
     );
-  const rows = sortMode === "manual" ? manualRows : visible;
-  const listEmpty = sortMode === "manual" ? rows.length === 0 : visible.length === 0;
-  const selectedTasks = (sortMode === "manual" ? rows : visible).filter((task) =>
-    selected.has(task.id),
-  );
+  const rows = sorting ? (previewRows ?? manualRows) : visible;
+  const listEmpty = sorting ? rows.length === 0 : visible.length === 0;
+  const selectedTasks = (sorting ? rows : visible).filter((task) => selected.has(task.id));
 
   function toggleSelected(id: string) {
     setSelected((current) => {
@@ -249,40 +244,59 @@ export function TaskPanel({
     setDraft(null);
   }
 
-  function dropOn(targetId: string) {
-    if (!dragId || dragId === targetId) {
-      setDragId(null);
-      return;
-    }
-    const ids = rows.map((task) => task.id);
-    const from = ids.indexOf(dragId);
-    const to = ids.indexOf(targetId);
-    setDragId(null);
-    if (from < 0 || to < 0) return;
-    ids.splice(to, 0, ids.splice(from, 1)[0]!);
-    void onReorder(ids);
+  /** 拖动经过某一行时实时预览新位置：光标在上半区插到前面，下半区插到后面。 */
+  function previewDuringDrag(targetId: string, clientY: number, element: HTMLElement) {
+    if (!dragId || dragId === targetId) return;
+    const list = previewRows ?? manualRows;
+    const from = list.findIndex((task) => task.id === dragId);
+    const targetIndex = list.findIndex((task) => task.id === targetId);
+    if (from < 0 || targetIndex < 0) return;
+
+    const rect = element.getBoundingClientRect();
+    const after = clientY > rect.top + rect.height / 2;
+    const next = [...list];
+    const [moved] = next.splice(from, 1);
+    if (!moved) return;
+    let insertAt = targetIndex + (after ? 1 : 0);
+    if (from < insertAt) insertAt -= 1;
+    insertAt = Math.max(0, Math.min(next.length, insertAt));
+    next.splice(insertAt, 0, moved);
+
+    if (next.every((task, index) => task.id === list[index]?.id)) return;
+    setPreviewRows(next);
   }
 
-  function toggleSortMode() {
-    if (hasManualOrder) {
-      void onClearOrder();
+  function commitDragOrder() {
+    if (!dragId) return;
+    const ids = (previewRows ?? manualRows).map((task) => task.id);
+    setDragId(null);
+    if (ids.length > 0) void onReorder(ids);
+  }
+
+  function toggleSorting() {
+    if (sorting) {
+      setSorting(false);
+      setPreviewRows(null);
       return;
     }
-    const next = sortMode === "time" ? "manual" : "time";
-    setSortMode(next);
-    if (next === "manual") {
-      setStatus("open");
-      setQuery("");
-      setTagFilter("all");
-      setTimeFilter("all");
-      setPriorityFilter("all");
-      setEffortFilter("all");
-      setSelectMode(false);
-      setShowFilters(false);
-      setEditingId(null);
-      setDraft(null);
-    }
+    setSorting(true);
+    setPreviewRows(null);
+    setStatus("open");
+    setQuery("");
+    setTagFilter("all");
+    setTimeFilter("all");
+    setPriorityFilter("all");
+    setEffortFilter("all");
+    setSelectMode(false);
+    setShowFilters(false);
+    setEditingId(null);
+    setDraft(null);
   }
+
+  // 保存排序后任务会重新拉取，用服务端顺序替换掉本地预览。
+  useEffect(() => {
+    if (sorting) setPreviewRows(null);
+  }, [tasks, sorting]);
 
   function renderRow(task: ApiTask) {
     const subtasks = task.subtasks ?? [];
@@ -304,25 +318,30 @@ export function TaskPanel({
         <div
           role="row"
           className={`panel-row${task.done ? " done" : ""}${dragId === task.id ? " dragging" : ""} urgency-${urgent.level}`}
-          draggable={sortMode === "manual" && !editing}
+          draggable={sorting && !editing}
           onDragStart={(event) => {
-            if (sortMode !== "manual") return;
+            if (!sorting) return;
             setDragId(task.id);
+            setPreviewRows(manualRows);
             event.dataTransfer.effectAllowed = "move";
           }}
           onDragOver={(event) => {
-            if (sortMode !== "manual") return;
+            if (!sorting || !dragId) return;
             event.preventDefault();
             event.dataTransfer.dropEffect = "move";
+            previewDuringDrag(task.id, event.clientY, event.currentTarget);
           }}
           onDrop={(event) => {
-            if (sortMode !== "manual") return;
+            if (!sorting) return;
             event.preventDefault();
-            dropOn(task.id);
+            commitDragOrder();
+          }}
+          onDragEnd={() => {
+            if (dragId) setDragId(null);
           }}
         >
           <div className="cell-title" role="cell">
-            {sortMode === "manual" && (
+            {sorting && (
               <span className="drag-handle" aria-hidden="true" title="拖动排序">
                 ⠿
               </span>
@@ -637,7 +656,7 @@ export function TaskPanel({
         </div>
       )}
       <div className="panel-toolbar">
-        {view === "list" && sortMode === "time" && (
+        {view === "list" && !sorting && (
           <div className="panel-tabs" role="tablist" aria-label="任务状态">
             {STATUSES.map((item) => (
               <button
@@ -684,12 +703,11 @@ export function TaskPanel({
               </button>
               <button
                 type="button"
-                className={`panel-toggle${sortMode === "manual" || hasManualOrder ? " active" : ""}`}
-                aria-pressed={sortMode === "manual" || hasManualOrder}
-                onClick={toggleSortMode}
-                title={hasManualOrder ? "清除手动顺序，恢复按开始时间排序" : undefined}
+                className={`panel-toggle${sorting ? " active" : ""}`}
+                aria-pressed={sorting}
+                onClick={toggleSorting}
               >
-                {hasManualOrder ? "按时间排" : sortMode === "manual" ? "完成排序" : "手动排序"}
+                {sorting ? "确认排序" : "排序"}
               </button>
             </>
           )}
@@ -801,9 +819,11 @@ export function TaskPanel({
           </div>
           {listEmpty ? (
             <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
-          ) : sortMode === "manual" ? (
-            <div className="panel-group" role="rowgroup">
-              <p className="manual-hint">拖动行首的 ⠿ 调整顺序，松手即保存。</p>
+          ) : sorting ? (
+            <div className="panel-group panel-sorting" role="rowgroup">
+              <p className="manual-hint">
+                拖动任务卡片调整顺序，松手就生效；排好后点「确认排序」退出。
+              </p>
               {rows.map(renderRow)}
             </div>
           ) : (

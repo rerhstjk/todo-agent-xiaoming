@@ -366,22 +366,6 @@ export default function App() {
     }
   }
 
-  async function clearOrder() {
-    const positioned = tasks.filter((task) => typeof task.position === "number");
-    if (positioned.length === 0) return;
-    try {
-      await Promise.allSettled(
-        positioned.map((task) => updateTaskFields(task.id, { position: null })),
-      );
-      setTasksError("");
-      notifyAgent("已恢复按开始时间排序");
-    } catch (cause) {
-      setTasksError(cause instanceof Error ? cause.message : "恢复排序失败。");
-    } finally {
-      void refreshTasks();
-    }
-  }
-
   async function batchDone(items: ApiTask[]) {
     const open = items.filter((task) => !task.done);
     await Promise.allSettled(open.map((task) => setTaskDone(task.id, true)));
@@ -602,7 +586,6 @@ export default function App() {
           onToggleReminders={() => void toggleReminders()}
           onEdit={editTaskFields}
           onReorder={reorderTasks}
-          onClearOrder={clearOrder}
           onAddSubtask={addSubtask}
         />
       </main>

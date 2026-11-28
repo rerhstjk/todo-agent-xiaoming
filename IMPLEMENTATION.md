@@ -105,7 +105,7 @@ src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/tas
 | `tags`      | 标签数组，最多 10 个，每个不超过 20 字                           |
 | `repeat`    | `daily` / `weekly` / `monthly`，完成一次后自动生成下一次         |
 | `note`      | 备注；对话里随任务一起记，面板可就地编辑                         |
-| `position`  | 手动排序序号，仅面板「手动排序」模式写入                         |
+| `position`  | 手动顺序序号，面板点「排序」拖动卡片时写入                       |
 
 HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只接受 `title`；
 `PATCH /api/tasks/:id` 在原有 `title` / `done` 之外允许整组回写 `subtasks`（清单面板勾选子任务用），
@@ -226,7 +226,7 @@ HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只
 - 工作量筛选按 1 小时以内 / 1–3 小时 / 3 小时以上 / 未估算分档；还没有自定义区间。
 - 时区固定为 `Asia/Shanghai`（`server/timezone.ts` 设置 `TZ`，可用 `XIAOMING_TIMEZONE` 覆盖），
   任务不存创建时的时区偏移；跨时区协作不在当前范围内。
-- 手动排序只在面板里生效，且是在当前筛选结果上重排 position；筛选后再拖动可能把未显示任务的序号挤开，
-  建议手动排序时不叠加搜索/筛选。
+- 排序只在面板里生效：进入排序会清空搜索/筛选，对所有未完成任务重排 `position`；没有
+  `position` 的新任务排在已排序任务之后，按开始时间兜底。
 - 备注和开始时间可以在面板就地编辑，标签目前只支持在对话里增删。
 - 模型模式只做了离线单元测试（假模型），真实 DeepSeek 调用需要在 `.env` 配置密钥后手动验证。
