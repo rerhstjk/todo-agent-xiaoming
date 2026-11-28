@@ -14,12 +14,12 @@ test("临近截止的任务会进入提醒队列", () => {
   const soon = task({
     id: "soon",
     dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "09:20",
+    dueTime: "09:01",
   });
   const later = task({
     id: "later",
     dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "12:00",
+    dueTime: "09:05",
   });
   const done = task({ id: "done", done: true, dueDate: toDateString(new Date(2026, 10, 26)) });
   const pending = dueReminders([soon, later, done], now.getTime(), () => false);
@@ -51,9 +51,9 @@ test("同一个任务同一截止时刻只提醒一次", () => {
   const soon = task({
     id: "soon",
     dueDate: toDateString(new Date(2026, 10, 26)),
-    dueTime: "09:20",
+    dueTime: "09:01",
   });
-  const at = new Date(2026, 10, 26, 9, 20).getTime();
+  const at = new Date(2026, 10, 26, 9, 1).getTime();
   const key = reminderKey(soon, at);
   const pending = dueReminders([soon], now.getTime(), (item) => item === key);
   assert.equal(pending.length, 0);

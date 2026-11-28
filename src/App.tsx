@@ -109,38 +109,57 @@ export default function App() {
     }
   }
 
-  useTaskReminders(tasks, reminderOn);
+  useTaskReminders(tasks, reminderOn, (task, at) => {
+    // 系统通知可能被专注模式或系统设置拦掉，页面里也给一条可见的提示。
+    notifyAgent(
+      at <= Date.now() ? `提醒：「${task.title}」到截止时间了。` : `提醒：「${task.title}」快到期了。`,
+    );
+  });
+
+  function enableReminders() {
+    setReminderOn(true);
+    window.localStorage.setItem("xiaoming.reminders", "on");
+    notifyAgent("已开启浏览器提醒：任务到点前 1 分钟会弹系统通知，页面里也会同步提示。");
+    try {
+      new Notification("提醒已开启", { body: "任务到点前 1 分钟，我会在这里提醒你。" });
+    } catch {
+      // 页面内提示已经给出，不影响后续轮询。
+    }
+  }
 
   async function toggleReminders() {
-    if (reminder === "unsupported") return;
+    // 用户可能刚在浏览器站点设置里改过权限，点击时重新读一次，避免状态过期。
+    const current = reminderPermission();
+    if (current !== reminder) setReminder(current);
+
+    if (current === "unsupported") {
+      notifyAgent("当前浏览器不支持系统通知，可以继续用页面里的清单。");
+      return;
+    }
 
     if (reminderOn) {
       setReminderOn(false);
       window.localStorage.setItem("xiaoming.reminders", "off");
-      setPanelNotice("已关闭浏览器提醒，任务不会再弹系统通知。");
+      notifyAgent("已关闭浏览器提醒，任务不会再弹系统通知。");
       return;
     }
 
-    if (reminder === "denied") {
-      setPanelNotice("浏览器已经拒绝通知权限，可以在地址栏的站点设置里重新允许。");
+    if (current === "denied") {
+      notifyAgent("浏览器已经拒绝通知权限，可以在地址栏的站点设置里重新允许。");
       return;
     }
 
-    if (reminder === "granted") {
-      setReminderOn(true);
-      window.localStorage.setItem("xiaoming.reminders", "on");
-      new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
+    if (current === "granted") {
+      enableReminders();
       return;
     }
 
     const result = await requestReminderPermission();
     setReminder(result);
     if (result === "granted") {
-      setReminderOn(true);
-      window.localStorage.setItem("xiaoming.reminders", "on");
-      new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
+      enableReminders();
     } else if (result === "denied") {
-      setPanelNotice("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
+      notifyAgent("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
     }
   }
 

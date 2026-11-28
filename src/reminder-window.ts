@@ -1,8 +1,8 @@
 import type { ApiTask } from "./chat-client.ts";
 import { deadline } from "./task-dates.ts";
 
-/** 提前 30 分钟提醒；已经过期 10 分钟内的任务也补一次提醒，太早的不打扰。 */
-export const REMINDER_LOOKAHEAD_MS = 30 * 60 * 1000;
+/** 到点前 1 分钟内提醒（轮询 30 秒，最多晚半分钟）；刚过期 10 分钟内的任务也补一次。 */
+export const REMINDER_LOOKAHEAD_MS = 60 * 1000;
 export const REMINDER_GRACE_MS = 10 * 60 * 1000;
 
 export interface PendingReminder {

@@ -38,31 +38,50 @@ function saveNotified(notified: Set<string>): void {
   }
 }
 
-/** 页面打开期间轮询任务；到截止前 30 分钟内弹一次浏览器通知（同一任务同一截止时刻只弹一次）。 */
-export function useTaskReminders(tasks: ApiTask[], enabled: boolean): void {
+/**
+ * 页面打开期间轮询任务；到截止前 5 分钟内弹一次浏览器通知
+ * （同一任务同一截止时刻只弹一次），并回调 onDue 让页面内也给出提示，
+ * 避免系统通知被专注模式或系统设置拦掉时用户什么都看不到。
+ */
+export function useTaskReminders(
+  tasks: ApiTask[],
+  enabled: boolean,
+  onDue?: (task: ApiTask, at: number) => void,
+): void {
   const notified = useRef<Set<string> | null>(null);
   if (notified.current === null) notified.current = loadNotified();
+  const onDueRef = useRef(onDue);
+  onDueRef.current = onDue;
 
   useEffect(() => {
     if (!enabled) return;
     if (typeof Notification === "undefined") return;
 
     const check = () => {
-      if (Notification.permission !== "granted") return;
       const pending = dueReminders(tasks, Date.now(), (key) => notified.current?.has(key) ?? false);
-      for (const { key, task } of pending) {
+      for (const { key, task, at } of pending) {
         notified.current?.add(key);
         if (notified.current) saveNotified(notified.current);
+        onDueRef.current?.(task, at);
+        if (Notification.permission !== "granted") continue;
         try {
-          new Notification("任务快到期了", { body: `${task.title} · ${dueText(task)}`, tag: key });
+          const title = at <= Date.now() ? "任务到时间了" : "任务快到期了";
+          new Notification(title, { body: `${task.title} · ${dueText(task)}`, tag: key });
         } catch {
-          // 某些浏览器在后台标签页会拒绝构造通知，忽略即可。
+          // 某些浏览器在后台标签页会拒绝构造通知；页面内的提示已经兜住了。
         }
       }
     };
 
     check();
     const timer = window.setInterval(check, 30_000);
-    return () => window.clearInterval(timer);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") check();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [tasks, enabled]);
 }
