@@ -24,12 +24,6 @@ import {
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
 import { suggestions } from "./suggestions.ts";
-import {
-  backgroundPushReady,
-  disableBackgroundPush,
-  enableBackgroundPush,
-  sendTestPush,
-} from "./push-client.ts";
 import { useSpeechInput } from "./use-speech.ts";
 import {
   reminderPermission,
@@ -55,11 +49,11 @@ export default function App() {
   const [panelNotice, setPanelNotice] = useState("");
   const [undo, setUndo] = useState<{ count: number; label: string } | null>(null);
   const [reminder, setReminder] = useState<ReminderPermission>(() => reminderPermission());
-  const [backgroundOn, setBackgroundOn] = useState(false);
   const [reminderOn, setReminderOn] = useState(() => {
-    // 只有用户主动开过提醒才轮询；单纯授权过通知不算开启，避免误以为后台提醒已生效。
     const saved = window.localStorage.getItem("xiaoming.reminders");
-    return saved === "on" && reminderPermission() === "granted";
+    if (saved === "on") return reminderPermission() === "granted";
+    if (saved === "off") return false;
+    return reminderPermission() === "granted";
   });
   const undoTimer = useRef<number | undefined>(undefined);
   const [panelWidth, setPanelWidth] = useState(() => {
@@ -115,44 +109,39 @@ export default function App() {
     }
   }
 
-  useTaskReminders(
-    tasks,
-    reminderOn,
-    (reminder) => {
-      // 系统通知可能被专注模式或系统设置拦掉，页面里也给一条可见的提示。
-      const what = reminder.kind === "due" ? "到时间了" : "快开始了";
-      notifyAgent(`提醒：「${reminder.task.title}」${what}（${reminder.label}）。`);
-    },
-    // 系统通知统一由服务端发（Web Push 或本机通知），页面里只留一条提示，避免弹两遍。
-    { system: false },
-  );
+  useTaskReminders(tasks, reminderOn, (reminder) => {
+    // 系统通知可能被专注模式或系统设置拦掉，页面里也给一条可见的提示。
+    const what = reminder.kind === "due" ? "到时间了" : "快开始了";
+    notifyAgent(`提醒：「${reminder.task.title}」${what}（${reminder.label}）。`);
+  });
 
-  useEffect(() => {
-    if (window.localStorage.getItem("xiaoming.reminders") === "off") {
-      void disableBackgroundPush();
-      return;
+  function enableReminders() {
+    setReminderOn(true);
+    window.localStorage.setItem("xiaoming.reminders", "on");
+    notifyAgent("已开启浏览器提醒：设了提醒的任务会在开始前 30 分钟提醒，页面里也会同步提示。");
+    try {
+      new Notification("提醒已开启", {
+        body: "设了提醒的任务会在开始前 30 分钟提醒你。",
+      });
+    } catch {
+      // 页面内提示已经给出，不影响后续轮询。
     }
-    void backgroundPushReady().then((ready) => {
-      if (ready) setBackgroundOn(true);
-    });
-  }, []);
+  }
 
   async function toggleReminders() {
     // 用户可能刚在浏览器站点设置里改过权限，点击时重新读一次，避免状态过期。
     const current = reminderPermission();
     if (current !== reminder) setReminder(current);
 
-    if (reminderOn) {
-      setReminderOn(false);
-      setBackgroundOn(false);
-      window.localStorage.setItem("xiaoming.reminders", "off");
-      await disableBackgroundPush();
-      notifyAgent("已关闭浏览器提醒，任务不会再弹系统通知。");
+    if (current === "unsupported") {
+      notifyAgent("当前浏览器不支持系统通知，可以继续用页面里的清单。");
       return;
     }
 
-    if (current === "unsupported") {
-      notifyAgent("当前浏览器不支持系统通知，可以继续用页面里的清单。");
+    if (reminderOn) {
+      setReminderOn(false);
+      window.localStorage.setItem("xiaoming.reminders", "off");
+      notifyAgent("已关闭浏览器提醒，任务不会再弹系统通知。");
       return;
     }
 
@@ -161,33 +150,18 @@ export default function App() {
       return;
     }
 
-    const permission = current === "granted" ? "granted" : await requestReminderPermission();
-    setReminder(permission);
-    if (permission !== "granted") {
-      notifyAgent("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
+    if (current === "granted") {
+      enableReminders();
       return;
     }
 
-    setReminderOn(true);
-    window.localStorage.setItem("xiaoming.reminders", "on");
-    const result = await enableBackgroundPush();
+    const result = await requestReminderPermission();
+    setReminder(result);
     if (result === "granted") {
-      setBackgroundOn(true);
-      try {
-        const sent = await sendTestPush();
-        notifyAgent(`后台提醒已开启：关掉页面也会收到通知（已发送 ${sent.sent} 条测试推送）。`);
-      } catch {
-        notifyAgent("后台提醒已开启：关掉页面也会在到点时收到系统通知。");
-      }
-      return;
+      enableReminders();
+    } else if (result === "denied") {
+      notifyAgent("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
     }
-
-    setBackgroundOn(false);
-    notifyAgent(
-      result === "denied"
-        ? "浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。"
-        : "这个浏览器暂不支持后台推送；页面保持打开时仍会提醒，关掉页面就不会弹了。",
-    );
   }
 
   const refreshTasks = useCallback(async () => {
@@ -571,7 +545,6 @@ export default function App() {
           onBatchDelete={(items) => void batchDelete(items)}
           reminder={reminder}
           reminderOn={reminderOn}
-          backgroundOn={backgroundOn}
           onToggleReminders={() => void toggleReminders()}
         />
       </main>

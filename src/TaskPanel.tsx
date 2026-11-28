@@ -71,7 +71,6 @@ export function TaskPanel({
   onBatchDelete,
   reminder,
   reminderOn,
-  backgroundOn,
   onToggleReminders,
 }: {
   tasks: ApiTask[];
@@ -89,8 +88,6 @@ export function TaskPanel({
   onBatchDelete: (tasks: ApiTask[]) => void;
   reminder: ReminderPermission;
   reminderOn: boolean;
-  /** 是否已经订阅后台推送（关掉页面也能弹通知）。 */
-  backgroundOn: boolean;
   onToggleReminders: () => void;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
@@ -304,11 +301,7 @@ export function TaskPanel({
                 ? "浏览器已拒绝通知权限，可在站点设置里重新允许"
                 : reminder === "unsupported"
                   ? "当前浏览器不支持系统通知"
-                  : reminderOn
-                    ? backgroundOn
-                      ? "后台提醒已开启：关掉页面也会收到系统通知"
-                      : "页面打开时会提醒；关掉页面后不会弹通知"
-                    : "开启后，到点会在浏览器弹出系统通知"
+                  : "任务快开始时弹出浏览器通知"
             }
           >
             {reminder === "unsupported"
@@ -316,9 +309,7 @@ export function TaskPanel({
               : reminder === "denied"
                 ? "提醒被拒"
                 : reminderOn
-                  ? backgroundOn
-                    ? "后台提醒"
-                    : "提醒已开"
+                  ? "提醒已开"
                   : "开启提醒"}
           </button>
           <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">

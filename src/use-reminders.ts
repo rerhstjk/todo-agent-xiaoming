@@ -45,9 +45,7 @@ export function useTaskReminders(
   tasks: ApiTask[],
   enabled: boolean,
   onDue?: (reminder: PendingReminder) => void,
-  options: { system?: boolean } = {},
 ): void {
-  const systemNotifications = options.system ?? true;
   const notified = useRef<Set<string> | null>(null);
   if (notified.current === null) notified.current = loadNotified();
   const onDueRef = useRef(onDue);
@@ -63,7 +61,7 @@ export function useTaskReminders(
         notified.current?.add(reminder.key);
         if (notified.current) saveNotified(notified.current);
         onDueRef.current?.(reminder);
-        if (!systemNotifications || Notification.permission !== "granted") continue;
+        if (Notification.permission !== "granted") continue;
         try {
           const title =
             reminder.kind === "start"
@@ -95,5 +93,5 @@ export function useTaskReminders(
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", check);
     };
-  }, [tasks, enabled, systemNotifications]);
+  }, [tasks, enabled]);
 }
