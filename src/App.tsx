@@ -59,8 +59,8 @@ export default function App() {
   });
   const undoTimer = useRef<number | undefined>(undefined);
   const [panelWidth, setPanelWidth] = useState(() => {
-    const saved = Number(window.localStorage.getItem("xiaoming.panelWidth"));
-    return Number.isFinite(saved) && saved >= 340 ? Math.min(720, saved) : 460;
+    const saved = Number(window.localStorage.getItem("xiaoming.panelWidth.v2"));
+    return Number.isFinite(saved) && saved >= 420 ? Math.min(860, saved) : 600;
   });
   const input = useRef<HTMLTextAreaElement>(null);
   const noticeTimer = useRef<number | undefined>(undefined);
@@ -183,7 +183,7 @@ export default function App() {
   }, [refreshTasks]);
 
   useEffect(() => {
-    window.localStorage.setItem("xiaoming.panelWidth", String(panelWidth));
+    window.localStorage.setItem("xiaoming.panelWidth.v2", String(panelWidth));
   }, [panelWidth]);
 
   // 拖动分隔条调整侧边栏宽度：面板在右侧，鼠标往左拖面板变宽。
@@ -192,7 +192,7 @@ export default function App() {
     const startX = event.clientX;
     const startWidth = panelWidth;
     function move(moveEvent: PointerEvent) {
-      setPanelWidth(Math.min(720, Math.max(340, startWidth - (moveEvent.clientX - startX))));
+      setPanelWidth(Math.min(860, Math.max(420, startWidth - (moveEvent.clientX - startX))));
     }
     function stop() {
       window.removeEventListener("pointermove", move);
