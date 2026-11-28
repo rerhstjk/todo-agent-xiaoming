@@ -2,16 +2,10 @@ import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { z } from "zod";
 import { execute } from "./commands.ts";
 import { findClockTime, findDateText, parseDateString, toDateString } from "./dates.ts";
+import { findEffortHours, toEffortHours } from "./effort.ts";
 import { toolReply } from "./replies.ts";
 import { taskScopes, type TaskScope } from "./selection.ts";
-import {
-  efforts,
-  priorities,
-  type Effort,
-  type Priority,
-  type TaskPatch,
-  type TaskStore,
-} from "./task-store.ts";
+import { priorities, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
 /** 交给模型的工具清单，参数描述直接写中文，减少模型猜字段的情况。 */
 export const toolSchemas: ChatCompletionTool[] = [
@@ -42,9 +36,8 @@ export const toolSchemas: ChatCompletionTool[] = [
             description: "优先级：high 高、normal 中（默认）、low 低。",
           },
           effort: {
-            type: "string",
-            enum: [...efforts],
-            description: "工作量：small 小、medium 中、large 大。用户没提到就不要传。",
+            type: "number",
+            description: "预计用时（小时），例如 2、0.5；用户没提就不要传，也不要自己编。",
           },
           note: { type: "string", description: "补充备注，可为空。" },
           subtasks: {
@@ -104,9 +97,8 @@ export const toolSchemas: ChatCompletionTool[] = [
             description: "新优先级；none 表示清除优先级。",
           },
           effort: {
-            type: "string",
-            enum: [...efforts, "none"],
-            description: "新的工作量；none 表示清除工作量。",
+            type: "number",
+            description: "新的预计用时（小时）；传 0 表示清除；不修改就不要传。",
           },
           note: { type: "string", description: "新的备注；传空字符串表示清除备注。" },
         },
@@ -156,7 +148,7 @@ const createArgs = z.object({
   dueDate: z.string().optional(),
   dueTime: z.string().optional(),
   priority: z.string().optional(),
-  effort: z.string().optional(),
+  effort: z.union([z.number(), z.string()]).optional(),
   note: z.string().optional(),
   subtasks: z.array(z.string()).max(20).optional(),
 });
@@ -172,7 +164,7 @@ const updateArgs = z.object({
   dueDate: z.string().optional(),
   dueTime: z.string().optional(),
   priority: z.string().optional(),
-  effort: z.string().optional(),
+  effort: z.union([z.number(), z.string()]).optional(),
   note: z.string().optional(),
 });
 
@@ -342,13 +334,15 @@ function parsePriority(value: string | undefined): Priority | null | undefined {
   return undefined;
 }
 
-function parseEffort(value: string | undefined): Effort | null | undefined {
+function parseEffort(value: unknown): number | null | undefined {
   if (value === undefined) return undefined;
+  if (typeof value === "number") {
+    if (value === 0) return null;
+    return toEffortHours(value);
+  }
+  if (typeof value !== "string") return undefined;
   const normalized = value.trim().toLowerCase();
   if (!normalized || normalized === "none" || normalized === "clear" || normalized === "无")
     return null;
-  if (["small", "小", "小工作量"].includes(normalized)) return "small";
-  if (["medium", "中", "中工作量"].includes(normalized)) return "medium";
-  if (["large", "大", "大工作量"].includes(normalized)) return "large";
-  return undefined;
+  return toEffortHours(normalized) ?? findEffortHours(normalized)?.hours;
 }

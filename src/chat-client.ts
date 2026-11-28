@@ -8,7 +8,8 @@ export type ApiTask = {
   dueDate?: string;
   dueTime?: string;
   priority?: "low" | "normal" | "high";
-  effort?: "small" | "medium" | "large";
+  /** 预计用时（小时）；旧数据里可能是 small/medium/large。 */
+  effort?: number | string;
   subtasks?: { id: string; title: string; done: boolean }[];
 };
 

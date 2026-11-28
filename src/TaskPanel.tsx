@@ -1,25 +1,58 @@
 import { useState } from "react";
 import type { ApiTask } from "./chat-client.ts";
 import { TaskCalendar } from "./TaskCalendar.tsx";
-import { compareTasks, dueText, endOfWeek, isOverdue, toDateString } from "./task-dates.ts";
+import {
+  compareTasks,
+  dueBucket,
+  dueText,
+  effortHours,
+  effortText,
+  endOfWeek,
+  isOverdue,
+  toDateString,
+  type DueBucket,
+} from "./task-dates.ts";
 
 type Priority = "high" | "normal" | "low";
-type Effort = "small" | "medium" | "large";
+type Status = "open" | "overdue" | "done";
+type TimeFilter = "all" | "today" | "tomorrow" | "week" | "more";
+type PriorityFilter = "all" | Priority;
+type EffortFilter = "all" | "short" | "medium" | "long" | "none";
 
 const PRIORITY_LABELS: Record<Priority, string> = { high: "高", normal: "中", low: "低" };
-const EFFORT_LABELS: Record<Effort, string> = { small: "小", medium: "中", large: "大" };
 
-type Filter = "open" | "today" | "week" | "overdue" | "done";
-type PriorityFilter = "all" | Priority;
-type EffortFilter = "all" | Effort;
-
-const FILTERS: { value: Filter; label: string; empty: string }[] = [
-  { value: "open", label: "待办", empty: "清单是空的，跟小明说一声就行。" },
-  { value: "today", label: "今天", empty: "今天没有到期的任务。" },
-  { value: "week", label: "本周", empty: "本周剩下的时间没有到期的任务。" },
+const STATUSES: { value: Status; label: string; empty: string }[] = [
+  { value: "open", label: "待办", empty: "没有符合条件的待办，改改上面的筛选试试。" },
   { value: "overdue", label: "逾期", empty: "没有逾期的任务，节奏保持得不错。" },
   { value: "done", label: "已完成", empty: "还没有完成的任务。" },
 ];
+
+const TIME_OPTIONS: { value: TimeFilter; label: string }[] = [
+  { value: "all", label: "全部时间" },
+  { value: "today", label: "今天" },
+  { value: "tomorrow", label: "明天" },
+  { value: "week", label: "本周" },
+  { value: "more", label: "更多" },
+];
+
+const EFFORT_OPTIONS: { value: EffortFilter; label: string }[] = [
+  { value: "all", label: "全部工作量" },
+  { value: "short", label: "1 小时以内" },
+  { value: "medium", label: "1–3 小时" },
+  { value: "long", label: "3 小时以上" },
+  { value: "none", label: "未估算" },
+];
+
+const GROUP_META: Record<DueBucket | "done", { label: string }> = {
+  overdue: { label: "逾期" },
+  today: { label: "今天" },
+  tomorrow: { label: "明天" },
+  week: { label: "本周" },
+  more: { label: "更多" },
+  done: { label: "已完成" },
+};
+
+const OPEN_GROUPS: Exclude<DueBucket, "overdue">[] = ["today", "tomorrow", "week", "more"];
 
 export function TaskPanel({
   tasks,
@@ -41,45 +74,118 @@ export function TaskPanel({
   onRefresh: () => void;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
-  const [filter, setFilter] = useState<Filter>("open");
+  const [status, setStatus] = useState<Status>("open");
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>("all");
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [effortFilter, setEffortFilter] = useState<EffortFilter>("all");
   const today = toDateString(new Date());
   const weekEnd = endOfWeek();
 
-  // 先按优先级/工作量过滤，再在剩下的任务里算各状态的数量，两个筛选叠加生效。
+  // 时间 / 优先级 / 工作量三个筛选先叠加，再在结果里算状态数量。
   const pool = tasks.filter((task) => {
     const priority = task.priority ?? "normal";
     if (priorityFilter !== "all" && priority !== priorityFilter) return false;
-    if (effortFilter !== "all" && task.effort !== effortFilter) return false;
+
+    const hours = effortHours(task);
+    if (effortFilter === "none" && hours !== undefined) return false;
+    if (effortFilter === "short" && !(hours !== undefined && hours <= 1)) return false;
+    if (effortFilter === "medium" && !(hours !== undefined && hours > 1 && hours <= 3))
+      return false;
+    if (effortFilter === "long" && !(hours !== undefined && hours > 3)) return false;
+
+    if (timeFilter !== "all" && dueBucket(task, today, weekEnd) !== timeFilter) return false;
     return true;
   });
+
   const sorted = [...pool].sort(compareTasks);
-  const open = sorted.filter((task) => !task.done);
-  const done = sorted.filter((task) => task.done);
-  const todayTasks = sorted.filter((task) => task.dueDate === today);
-  const weekTasks = open.filter(
-    (task) => task.dueDate && task.dueDate >= today && task.dueDate <= weekEnd,
-  );
+  const openTasks = sorted.filter((task) => !task.done && !isOverdue(task));
   const overdueTasks = sorted.filter((task) => isOverdue(task));
-  const counts: Record<Filter, number> = {
-    open: open.length,
-    today: todayTasks.length,
-    week: weekTasks.length,
+  const doneTasks = sorted.filter((task) => task.done);
+  const counts: Record<Status, number> = {
+    open: openTasks.length,
     overdue: overdueTasks.length,
-    done: done.length,
+    done: doneTasks.length,
   };
-  const visible =
-    filter === "done"
-      ? done
-      : filter === "today"
-        ? todayTasks
-        : filter === "week"
-          ? weekTasks
-          : filter === "overdue"
-            ? overdueTasks
-            : open;
-  const emptyText = FILTERS.find((item) => item.value === filter)?.empty ?? "";
+
+  const visible = status === "open" ? openTasks : status === "overdue" ? overdueTasks : doneTasks;
+  const emptyText = STATUSES.find((item) => item.value === status)?.empty ?? "";
+
+  const groups: { key: DueBucket | "done"; tasks: ApiTask[] }[] =
+    status === "open"
+      ? OPEN_GROUPS.map((key) => ({
+          key,
+          tasks: visible.filter((task) => dueBucket(task, today, weekEnd) === key),
+        }))
+      : [{ key: status === "done" ? "done" : "overdue", tasks: visible }];
+  const shownGroups = groups.filter((group) => group.tasks.length > 0);
+
+  function renderRow(task: ApiTask) {
+    const subtasks = task.subtasks ?? [];
+    const finished = subtasks.filter((item) => item.done).length;
+    const overdue = isOverdue(task);
+    const priority = task.priority ?? "normal";
+    return (
+      <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
+        <div className="cell-title" role="cell">
+          <button
+            className="check"
+            aria-label={task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`}
+            aria-pressed={task.done}
+            onClick={() => onToggle(task)}
+          >
+            {task.done ? "✓" : ""}
+          </button>
+          <div className="task-body">
+            <div className="task-main">
+              <span className="task-title">{task.title}</span>
+              {subtasks.length > 0 && (
+                <span className="subtask-count">
+                  子任务 {finished}/{subtasks.length}
+                </span>
+              )}
+            </div>
+            {subtasks.length > 0 && (
+              <ul className="subtask-list">
+                {subtasks.map((subtask) => (
+                  <li key={subtask.id} className={subtask.done ? "done" : ""}>
+                    <button
+                      className="subtask-check"
+                      aria-label={
+                        subtask.done
+                          ? `把子任务「${subtask.title}」重新打开`
+                          : `完成子任务「${subtask.title}」`
+                      }
+                      aria-pressed={subtask.done}
+                      onClick={() => onToggleSubtask(task, subtask.id)}
+                    >
+                      {subtask.done ? "✓" : "○"}
+                    </button>
+                    <span className="subtask-title">{subtask.title}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button
+            className="delete"
+            aria-label={`删除「${task.title}」`}
+            onClick={() => onDelete(task)}
+          >
+            ×
+          </button>
+        </div>
+        <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
+          {dueText(task)}
+        </span>
+        <span className="cell-effort" role="cell">
+          {effortText(task)}
+        </span>
+        <span className="cell-priority" role="cell">
+          <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <aside className="panel" aria-label="待办清单">
@@ -117,14 +223,14 @@ export function TaskPanel({
       )}
       <div className="panel-toolbar">
         {view === "list" && (
-          <div className="panel-tabs" role="tablist">
-            {FILTERS.map((item) => (
+          <div className="panel-tabs" role="tablist" aria-label="任务状态">
+            {STATUSES.map((item) => (
               <button
                 key={item.value}
                 role="tab"
-                aria-selected={filter === item.value}
-                className={filter === item.value ? "active" : ""}
-                onClick={() => setFilter(item.value)}
+                aria-selected={status === item.value}
+                className={status === item.value ? "active" : ""}
+                onClick={() => setStatus(item.value)}
               >
                 {item.label} {counts[item.value]}
               </button>
@@ -132,6 +238,20 @@ export function TaskPanel({
           </div>
         )}
         <div className="panel-filters">
+          {view === "list" && (
+            <select
+              aria-label="按时间筛选"
+              className="panel-select"
+              value={timeFilter}
+              onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
+            >
+              {TIME_OPTIONS.map((item) => (
+                <option key={item.value} value={item.value}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             aria-label="按优先级筛选"
             className="panel-select"
@@ -149,10 +269,11 @@ export function TaskPanel({
             value={effortFilter}
             onChange={(event) => setEffortFilter(event.target.value as EffortFilter)}
           >
-            <option value="all">全部工作量</option>
-            <option value="small">工作量：小</option>
-            <option value="medium">工作量：中</option>
-            <option value="large">工作量：大</option>
+            {EFFORT_OPTIONS.map((item) => (
+              <option key={item.value} value={item.value}>
+                {item.label}
+              </option>
+            ))}
           </select>
         </div>
       </div>
@@ -174,75 +295,15 @@ export function TaskPanel({
           {visible.length === 0 ? (
             <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>
           ) : (
-            visible.map((task) => {
-              const subtasks = task.subtasks ?? [];
-              const finished = subtasks.filter((item) => item.done).length;
-              const overdue = isOverdue(task);
-              const priority = task.priority ?? "normal";
-              return (
-                <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
-                  <div className="cell-title" role="cell">
-                    <button
-                      className="check"
-                      aria-label={
-                        task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`
-                      }
-                      aria-pressed={task.done}
-                      onClick={() => onToggle(task)}
-                    >
-                      {task.done ? "✓" : ""}
-                    </button>
-                    <div className="task-body">
-                      <div className="task-main">
-                        <span className="task-title">{task.title}</span>
-                        {subtasks.length > 0 && (
-                          <span className="subtask-count">
-                            子任务 {finished}/{subtasks.length}
-                          </span>
-                        )}
-                      </div>
-                      {subtasks.length > 0 && (
-                        <ul className="subtask-list">
-                          {subtasks.map((subtask) => (
-                            <li key={subtask.id} className={subtask.done ? "done" : ""}>
-                              <button
-                                className="subtask-check"
-                                aria-label={
-                                  subtask.done
-                                    ? `把子任务「${subtask.title}」重新打开`
-                                    : `完成子任务「${subtask.title}」`
-                                }
-                                aria-pressed={subtask.done}
-                                onClick={() => onToggleSubtask(task, subtask.id)}
-                              >
-                                {subtask.done ? "✓" : "○"}
-                              </button>
-                              <span className="subtask-title">{subtask.title}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                    <button
-                      className="delete"
-                      aria-label={`删除「${task.title}」`}
-                      onClick={() => onDelete(task)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                  <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
-                    {dueText(task)}
-                  </span>
-                  <span className="cell-effort" role="cell">
-                    {task.effort ? EFFORT_LABELS[task.effort] : "—"}
-                  </span>
-                  <span className="cell-priority" role="cell">
-                    <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
-                  </span>
+            shownGroups.map((group) => (
+              <div className={`panel-group group-${group.key}`} key={group.key} role="rowgroup">
+                <div className="panel-group-head">
+                  <span className="group-tag">{GROUP_META[group.key].label}</span>
+                  <span className="group-count">{group.tasks.length}</span>
                 </div>
-              );
-            })
+                {group.tasks.map(renderRow)}
+              </div>
+            ))
           )}
         </div>
       )}

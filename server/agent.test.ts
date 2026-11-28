@@ -89,7 +89,7 @@ test("创建任务时识别日期、时刻、优先级和工作量", async () =>
   await send("记一下高优先级写周报，工作量小");
   const weekly = store.list().find((item) => item.title === "写周报");
   assert.equal(weekly?.priority, "high");
-  assert.equal(weekly?.effort, "small");
+  assert.equal(weekly?.effort, 1);
 });
 
 test("支持子任务：添加、完成，并在清单里显示进度", async () => {
@@ -620,4 +620,54 @@ test("模型工具也支持写具体时刻和清除时刻", async () => {
   runTool(store, "update_task", { title: "拿快递", dueDate: "" }, NOW);
   assert.equal(store.list()[0]?.dueDate, undefined);
   assert.equal(store.list()[0]?.dueTime, undefined);
+});
+
+test("没提预计用时时会追问，回答小时数后补到任务上", async () => {
+  const { store, send } = fixture();
+
+  const created = await send("记一下写周报");
+  assert.match(created, /这项大概要花多久/);
+  assert.equal(store.list()[0]?.effort, undefined);
+
+  const updated = await send("大概 1.5 小时");
+  assert.match(updated, /预计用时设为 1\.5 小时/);
+  assert.equal(store.list()[0]?.effort, 1.5);
+});
+
+test("创建时说的“预计半小时”记成 0.5 小时，且不留在标题里", async () => {
+  const { store, send } = fixture();
+
+  await send("晚上8点买牛奶，预计半小时");
+  const task = store.list()[0];
+  assert.equal(task?.title, "买牛奶");
+  assert.equal(task?.effort, 0.5);
+  assert.equal(task?.dueTime, "20:00");
+});
+
+test("可以直接修改任务的工作量", async () => {
+  const { store, send } = fixture();
+  store.create({ title: "写周报", effort: 2 });
+
+  const reply = await send("把写周报的工作量改成 3 小时");
+  assert.match(reply, /3 小时/);
+  assert.equal(store.list()[0]?.effort, 3);
+});
+
+test("工具支持按小时读写工作量", () => {
+  const { store } = fixture();
+  runTool(store, "create_task", { title: "整理资料", effort: 1.5 }, NOW);
+  assert.equal(store.list()[0]?.effort, 1.5);
+
+  const updated = runTool(store, "update_task", { title: "整理资料", effort: 0 }, NOW);
+  assert.equal(updated.ok, true);
+  assert.equal(store.list()[0]?.effort, undefined);
+});
+
+test("没有任务上下文时，回答小时数会先问是哪条任务", async () => {
+  const { store, send } = fixture();
+  store.create({ title: "写周报" });
+
+  const reply = await send("大概 2 小时");
+  assert.match(reply, /要给哪条任务记预计用时/);
+  assert.equal(store.list()[0]?.effort, undefined);
 });

@@ -16,7 +16,8 @@ import {
 } from "./dates.ts";
 import { chatReply, createBatchChat } from "./replies.ts";
 import type { TaskScope } from "./selection.ts";
-import { type Effort, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
+import { findEffortHours, parseDurationAnswer } from "./effort.ts";
+import { type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
 
 /**
  * 没配置 DEEPSEEK_API_KEY 时使用的规则引擎。它覆盖了题目验收对话里出现的说法，
@@ -34,11 +35,12 @@ type Intent =
       dueDate?: string;
       dueTime?: string;
       priority?: Priority;
-      effort?: Effort;
+      effort?: number;
     }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
-  | { kind: "update"; hint: string; dueDate?: string; priority?: Priority }
+  | { kind: "update"; hint: string; dueDate?: string; priority?: Priority; effort?: number }
+  | { kind: "duration"; hours: number }
   | { kind: "subtask"; hint: string; action: "add" | "complete" | "remove"; subtask: string }
   | { kind: "subtaskUnclear" }
   | { kind: "clearDone" }
@@ -125,7 +127,8 @@ const REOPEN_VERBS = [
   "又要做",
 ];
 
-const EFFORT_MAP: Record<string, Effort> = { 小: "small", 中: "medium", 大: "large" };
+/** 旧说法「工作量小/中/大」折算成小时，继续兼容。 */
+const LEGACY_EFFORT_HOURS: Record<string, number> = { 小: 1, 中: 3, 大: 6 };
 const ORDINALS: Record<string, number> = {
   一: 1,
   二: 2,
@@ -162,6 +165,10 @@ export function parseIntent(text: string, now = new Date()): Intent {
 
   if (CLEAR_DONE_WORDS.test(value)) return { kind: "clearDone" };
 
+  // 「大概 2 小时」：在回答上一条任务大概要花多久。
+  const duration = parseDurationAnswer(value);
+  if (duration !== undefined) return { kind: "duration", hours: duration };
+
   const priorityUpdate =
     /^(?:把|将)?\s*(.+?)\s*(?:设成|设为|设置为|改成|改为|标记为|调整成|调整到)\s*(高优先级|中优先级|低优先级|高|中|低)\s*(?:优先级)?$/.exec(
       value,
@@ -181,6 +188,26 @@ export function parseIntent(text: string, now = new Date()): Intent {
     const hint = extractHint(dueUpdate[1], []);
     const dueDate = findDateText(dueUpdate[2], now)?.value;
     if (hint && dueDate) return { kind: "update", hint, dueDate };
+  }
+
+  // 「把开会的工作量改成 2 小时」「给开会记 2 小时」：改预计用时。
+  const effortUpdate =
+    /^(?:把|将|给|帮|为)?\s*(.+?)\s*(?:的)?\s*(?:工作量|预计用时|预计耗时|耗时|用时)\s*(?:改成|改为|设为|设置为|记为|记成|记|是|为)?\s*(.+)$/i.exec(
+      value,
+    );
+  if (effortUpdate) {
+    const hint = extractHint(effortUpdate[1], []);
+    const found = findEffortHours(effortUpdate[2]);
+    if (hint && found) return { kind: "update", hint, effort: found.hours };
+  }
+
+  const effortAssign = /^(?:给|帮|为)\s*(.+?)\s*(?:记|记一下|记录|记成|设成|设为)\s*(.+)$/.exec(
+    value,
+  );
+  if (effortAssign) {
+    const hint = extractHint(effortAssign[1], []);
+    const found = findEffortHours(effortAssign[2]);
+    if (hint && found) return { kind: "update", hint, effort: found.hours };
   }
 
   // 「再增加一条子任务，购买咖啡」「加个子任务：买咖啡」：没说加到哪条任务下，
@@ -323,11 +350,22 @@ function createIntent(text: string, now: Date): Intent {
   else if (/(低优先级|不急|不着急|随时)/.test(value)) priority = "low";
   value = value.replace(/高优先级|很重要|重要|紧急|特急|加急|优先|低优先级|不急|不着急|随时/g, " ");
 
-  let effort: Effort | undefined;
-  const effortMatch = /(?:工作量|耗时|难度)\s*[:：]?\s*(小|中|大)/.exec(value);
-  if (effortMatch) {
-    effort = EFFORT_MAP[effortMatch[1]];
-    value = value.replace(effortMatch[0], " ");
+  let effort: number | undefined;
+  const legacyEffort = /(?:工作量|耗时|难度)\s*[:：]?\s*(小|中|大)(?![时半分])/.exec(value);
+  if (legacyEffort) {
+    effort = LEGACY_EFFORT_HOURS[legacyEffort[1]!];
+    value = value.replace(legacyEffort[0], " ");
+  } else {
+    const effortMatch = findEffortHours(value);
+    if (effortMatch) {
+      effort = effortMatch.hours;
+      value = value.replace(effortMatch.matched, " ");
+      // “预计半小时”这类前缀不属于标题，顺手清掉残留。
+      value = value.replace(
+        /[，,、\s]*(?:预计|大概|大约|估计|耗时|用时|需要|花|要)\s*(?=[，,、\s。]|$)/g,
+        " ",
+      );
+    }
   }
 
   value = stripCreatePrefixes(value);
@@ -513,7 +551,20 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       const patch: TaskPatch = {};
       if (intent.dueDate) patch.dueDate = intent.dueDate;
       if (intent.priority) patch.priority = intent.priority;
+      if (intent.effort !== undefined) patch.effort = intent.effort;
       return chatReply(execute(store, { kind: "update", hint: intent.hint, patch }, now), now);
+    }
+    case "duration": {
+      // 回答“大概 2 小时”时只认上一条回复里明确提到的那条任务，不靠“只有一条待办”来猜。
+      const previous =
+        [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
+      const mentioned = store.list().filter((task) => !task.done && previous.includes(task.title));
+      const title = mentioned.length === 1 ? mentioned[0]!.title : undefined;
+      if (!title) return "要给哪条任务记预计用时？可以说「给开会记 2 小时」。";
+      return chatReply(
+        execute(store, { kind: "update", hint: title, patch: { effort: intent.hours } }, now),
+        now,
+      );
     }
     case "subtask": {
       const generic =

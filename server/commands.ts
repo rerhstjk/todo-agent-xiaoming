@@ -3,7 +3,6 @@ import { normalizeForMatch, resolveTask } from "./matching.ts";
 import { selectTasks, type TaskScope } from "./selection.ts";
 import {
   taskSubtasks,
-  type Effort,
   type Priority,
   type Subtask,
   type Task,
@@ -22,7 +21,8 @@ export interface NewTaskInput {
   dueDate?: string;
   dueTime?: string;
   priority?: Priority;
-  effort?: Effort;
+  /** 预计用时（小时）。 */
+  effort?: number;
   note?: string;
   subtasks?: string[];
 }

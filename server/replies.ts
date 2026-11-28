@@ -1,7 +1,7 @@
+import { formatEffort } from "./effort.ts";
 import { defaultActivity } from "./activity.ts";
 import { addDays, formatShortChineseDate, relativeDayLabel } from "./dates.ts";
 import {
-  EFFORT_LABELS,
   PRIORITY_LABELS,
   formatTaskBlock,
   formatTaskList,
@@ -9,7 +9,7 @@ import {
   taskDetails,
 } from "./format.ts";
 import { overdueTasks } from "./selection.ts";
-import type { Task } from "./task-store.ts";
+import { taskEffortHours, type Task } from "./task-store.ts";
 import { toPublicTask } from "./task-view.ts";
 import type { CommandResult } from "./commands.ts";
 
@@ -102,6 +102,9 @@ function createChat(result: CommandResult, now: Date): string {
     `已记下「${task.title}」${taskDetails(task, now)}。`,
     pendingLine(result.tasks, task),
   ];
+  if (taskEffortHours(task) === undefined) {
+    lines.push(`这项大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
+  }
   if (result.duplicate) {
     lines.push(
       `清单里本来就有一条同名的未完成任务「${result.duplicate.title}」，需要的话可以删掉其中一条。`,
@@ -135,6 +138,16 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
     lines.push(
       `已记下 ${created.length} 条任务：`,
       ...created.flatMap((task) => formatTaskBlock(task, now).split("\n")),
+    );
+  }
+
+  const missingEffort =
+    created.length > 0 && created.every((task) => taskEffortHours(task) === undefined);
+  if (missingEffort) {
+    lines.push(
+      created.length === 1
+        ? `这项大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
+        : `这几项大概各要花多久？回「大概 2 小时」这样的说法，我逐条帮你补上。`,
     );
   }
 
@@ -327,8 +340,8 @@ function updateChat(result: CommandResult, now: Date): string {
   if (patch.priority) {
     return `已把「${task.title}」设为${PRIORITY_LABELS[patch.priority]}。`;
   }
-  if (patch.effort) {
-    return `已把「${task.title}」的工作量设为${EFFORT_LABELS[patch.effort]}。`;
+  if (patch.effort !== undefined && patch.effort !== null) {
+    return `已把「${task.title}」的预计用时设为 ${formatEffort(patch.effort)}。`;
   }
   return `已更新「${task.title}」。\n${pendingSummary(result.tasks)}`;
 }

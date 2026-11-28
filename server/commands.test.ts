@@ -152,14 +152,14 @@ describe("setDone / remove / rename / update", () => {
       {
         kind: "update",
         hint: "方案",
-        patch: { dueDate: "2026-11-28", priority: "high", effort: "medium" },
+        patch: { dueDate: "2026-11-28", priority: "high", effort: 2 },
       },
       NOW,
     );
     assert.equal(result.status, "ok");
     assert.equal(result.task?.dueDate, "2026-11-28");
     assert.equal(result.task?.priority, "high");
-    assert.equal(result.task?.effort, "medium");
+    assert.equal(result.task?.effort, 2);
   });
 
   test("找不到任务时返回 missing 并带上完整清单", () => {

@@ -1,11 +1,11 @@
 import { dayDiff, deadlineMoment, relativeDayLabel } from "./dates.ts";
+import { formatEffort } from "./effort.ts";
 import {
   taskDueDate,
   taskDueTime,
-  taskEffort,
+  taskEffortHours,
   taskPriority,
   taskSubtasks,
-  type Effort,
   type Priority,
   type Task,
 } from "./task-store.ts";
@@ -14,12 +14,6 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   high: "高优先级",
   normal: "中优先级",
   low: "低优先级",
-};
-
-export const EFFORT_LABELS: Record<Effort, string> = {
-  small: "小",
-  medium: "中",
-  large: "大",
 };
 
 /** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行。 */
@@ -59,8 +53,8 @@ export function taskDetails(task: Task, now: Date): string {
   const priority = taskPriority(task);
   if (priority && priority !== "normal") details.push(PRIORITY_LABELS[priority]);
 
-  const effort = taskEffort(task);
-  if (effort) details.push(`工作量${EFFORT_LABELS[effort]}`);
+  const effort = taskEffortHours(task);
+  if (effort !== undefined) details.push(`预计 ${formatEffort(effort)}`);
 
   const subtasks = taskSubtasks(task);
   if (subtasks.length > 0) {

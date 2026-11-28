@@ -87,6 +87,56 @@ export function compareTasks(a: ApiTask, b: ApiTask): number {
   return 0;
 }
 
+export type DueBucket = "overdue" | "today" | "tomorrow" | "week" | "more";
+
+function addDaysString(date: string, days: number): string {
+  const parsed = parseDateString(date) ?? new Date();
+  parsed.setDate(parsed.getDate() + days);
+  return toDateString(parsed);
+}
+
+/** 把任务按截止时间分到「逾期 / 今天 / 明天 / 本周 / 更多」。 */
+export function dueBucket(
+  task: ApiTask,
+  today = toDateString(new Date()),
+  weekEnd = endOfWeek(),
+): DueBucket {
+  if (!task.dueDate) return "more";
+  if (task.dueDate < today) return "overdue";
+  if (task.dueDate === today) return "today";
+  if (task.dueDate === addDaysString(today, 1)) return "tomorrow";
+  if (task.dueDate <= weekEnd) return "week";
+  return "more";
+}
+
+const LEGACY_EFFORT_HOURS: Record<string, number> = {
+  small: 1,
+  medium: 3,
+  large: 6,
+  小: 1,
+  中: 3,
+  大: 6,
+};
+
+/** 任务预计用时（小时）；兼容旧的 small/medium/large 数据。 */
+export function effortHours(task: ApiTask): number | undefined {
+  const value: unknown = task.effort;
+  if (typeof value === "number") return value > 0 ? value : undefined;
+  if (typeof value !== "string") return undefined;
+  const hours = Number(value);
+  if (Number.isFinite(hours) && hours > 0) return hours;
+  return LEGACY_EFFORT_HOURS[value];
+}
+
+/** 表格里的工作量单元格：2 小时 / 半小时 / —。 */
+export function effortText(task: ApiTask): string {
+  const hours = effortHours(task);
+  if (hours === undefined) return "—";
+  if (hours === 0.25) return "15 分钟";
+  if (hours === 0.5) return "半小时";
+  return `${hours} 小时`;
+}
+
 /** 本周的最后一天（周日）。 */
 export function endOfWeek(today = new Date()): string {
   const end = new Date(today);

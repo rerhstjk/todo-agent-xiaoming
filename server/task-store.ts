@@ -2,12 +2,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { toEffortHours } from "./effort.ts";
 
 export const priorities = ["low", "normal", "high"] as const;
 export type Priority = (typeof priorities)[number];
-
-export const efforts = ["small", "medium", "large"] as const;
-export type Effort = (typeof efforts)[number];
 
 export interface Subtask {
   id: string;
@@ -28,7 +26,8 @@ export interface Task {
   /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
   dueTime?: string;
   priority?: Priority;
-  effort?: Effort;
+  /** 预计用时（小时），0.25–100。 */
+  effort?: number;
   subtasks?: Subtask[];
   [key: string]: unknown;
 }
@@ -47,7 +46,7 @@ export interface NewTask {
   /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
   dueTime?: string;
   priority?: Priority;
-  effort?: Effort;
+  effort?: number;
   subtasks?: string[];
 }
 
@@ -59,7 +58,7 @@ export interface TaskPatch {
   dueDate?: string | null;
   dueTime?: string | null;
   priority?: Priority | null;
-  effort?: Effort | null;
+  effort?: number | null;
   subtasks?: Subtask[] | null;
 }
 
@@ -94,11 +93,9 @@ export function taskPriority(task: Task): Priority | undefined {
     : undefined;
 }
 
-export function taskEffort(task: Task): Effort | undefined {
-  const value: unknown = task.effort;
-  return typeof value === "string" && (efforts as readonly string[]).includes(value)
-    ? (value as Effort)
-    : undefined;
+/** 读任务的工作量（小时），兼容旧数据里的 small/medium/large。 */
+export function taskEffortHours(task: Task): number | undefined {
+  return toEffortHours(task.effort);
 }
 
 export function taskSubtasks(task: Task): Subtask[] {
@@ -151,7 +148,8 @@ export function createJsonTaskStore(filename: string): TaskStore {
     if (isDateString(draft.dueDate)) task.dueDate = draft.dueDate;
     if (isDateString(draft.dueDate) && isTimeString(draft.dueTime)) task.dueTime = draft.dueTime;
     if (draft.priority) task.priority = draft.priority;
-    if (draft.effort) task.effort = draft.effort;
+    const effort = toEffortHours(draft.effort);
+    if (effort !== undefined) task.effort = effort;
 
     const subtasks = (draft.subtasks ?? [])
       .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))
