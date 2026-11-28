@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { normalizeForMatch, resolveTask } from "./matching.ts";
 import { nextDueDate, type Repeat } from "./recurrence.ts";
-import { selectTasks, type TaskScope } from "./selection.ts";
+import { selectTasks, sortByDue, type TaskScope } from "./selection.ts";
 import {
   taskDueDate,
   taskDueTime,
@@ -53,7 +53,9 @@ export type Command =
   /** 带 taskId 时直接按 id 定位，避免同名的多条任务产生歧义。 */
   | { kind: "subtask"; hint: string; action: SubtaskAction; subtask: string; taskId?: string }
   | { kind: "clearDone" }
-  | { kind: "undo" };
+  | { kind: "undo" }
+  | { kind: "move"; hint: string; targetHint: string; place: "before" | "after" }
+  | { kind: "move"; hint: string; place: "top" | "bottom" };
 
 export type ResultStatus = "ok" | "unchanged" | "missing" | "ambiguous" | "invalid";
 
@@ -92,6 +94,8 @@ export interface CommandResult {
   cleared?: number;
   /** 完成重复任务时自动生成的下一次任务。 */
   nextTask?: Task;
+  /** 移动顺序时用作参照的任务。 */
+  target?: Task;
   /** 适配层给出的说明，例如日期格式无法识别。 */
   message?: string;
 }
@@ -116,6 +120,8 @@ export function execute(store: TaskStore, command: Command, now = new Date()): C
       return clearDone(store, command);
     case "undo":
       return undo(store, command);
+    case "move":
+      return move(store, command);
   }
 }
 
@@ -375,6 +381,50 @@ function subtask(store: TaskStore, command: Extract<Command, { kind: "subtask" }
     task: updated ?? task,
     subtask: command.action === "complete" ? { ...existing, done: true } : existing,
     subtasks: next,
+  };
+}
+
+function move(store: TaskStore, command: Extract<Command, { kind: "move" }>): CommandResult {
+  const tasks = store.list();
+  const located = locate(command, tasks);
+  if ("failed" in located) return located.failed;
+  const moving = located.task;
+
+  const ordered = sortByDue(tasks).filter((task) => task.id !== moving.id);
+  let index = 0;
+  let targetTask: Task | undefined;
+
+  if ("targetHint" in command) {
+    const target = resolveTask(ordered, command.targetHint);
+    if (target.kind !== "found") {
+      return {
+        command,
+        status: target.kind === "ambiguous" ? "ambiguous" : "missing",
+        changed: false,
+        tasks,
+        hint: command.targetHint,
+        candidates: target.kind === "ambiguous" ? target.candidates : undefined,
+      };
+    }
+    const targetIndex = ordered.findIndex((task) => task.id === target.task.id);
+    index = command.place === "before" ? targetIndex : targetIndex + 1;
+    targetTask = target.task;
+  } else {
+    index = command.place === "top" ? 0 : ordered.length;
+  }
+
+  ordered.splice(index, 0, moving);
+  ordered.forEach((task, order) => {
+    if (task.position !== order) store.update(task.id, { position: order });
+  });
+
+  return {
+    command,
+    status: "ok",
+    changed: true,
+    tasks: store.list(),
+    task: store.get(moving.id) ?? moving,
+    target: targetTask,
   };
 }
 

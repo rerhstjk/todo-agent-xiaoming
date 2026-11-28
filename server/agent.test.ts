@@ -1036,3 +1036,15 @@ test("回答暂不设置时保留无时间任务，提问也不会被误当成�
   assert.match(listed, /今天/);
   assert.equal(store.list().find((task) => task.title === "买牛奶")?.startDate, undefined);
 });
+
+test("可以把任务移到另一条上面，清单顺序随之变化", async () => {
+  const { store, send } = fixture();
+  store.create({ title: "开会", startDate: "2026-11-26", startTime: "15:00" });
+  store.create({ title: "买牛奶", startDate: "2026-11-26", startTime: "16:00" });
+
+  const moved = await send("把买牛奶移到开会上面");
+  assert.match(moved, /已把「买牛奶」移到「开会」前面/);
+
+  const listed = await send("看看清单");
+  assert.ok(listed.indexOf("买牛奶") >= 0 && listed.indexOf("买牛奶") < listed.indexOf("开会"));
+});

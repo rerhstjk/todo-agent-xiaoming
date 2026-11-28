@@ -64,6 +64,12 @@ type Intent =
   | { kind: "clearDone" }
   | { kind: "activity" }
   | { kind: "undo" }
+  | {
+      kind: "move";
+      hint: string;
+      targetHint?: string;
+      place: "before" | "after" | "top" | "bottom";
+    }
   | { kind: "greeting" }
   | { kind: "help" }
   | { kind: "empty" }
@@ -191,6 +197,32 @@ export function parseIntent(text: string, now = new Date()): Intent {
     /^undo$/i.test(value)
   ) {
     return { kind: "undo" };
+  }
+
+  // 「把买水果移到开会上面」「把开会放到最前面」：调整手动顺序。
+  const moveEdge =
+    /^(?:把|将)?\s*(.+?)\s*(?:移到|移动到|挪到|放到|排到|拖到)\s*(最前面|最上面|最前|首位|最后面|最下面|最后|末位)[吧了啊呀!！。]?$/.exec(
+      value,
+    );
+  if (moveEdge) {
+    const hint = extractHint(moveEdge[1], []);
+    if (hint) {
+      const place = /^(?:最前面|最上面|最前|首位)$/.test(moveEdge[2]) ? "top" : "bottom";
+      return { kind: "move", hint, place };
+    }
+  }
+
+  const moveRelative =
+    /^(?:把|将)?\s*(.+?)\s*(?:移到|移动到|挪到|放到|排到|拖到)\s*(.+?)\s*(?:的)?\s*(上面|上边|前面|前边|之前|后面|下边|后边|之后)[吧了啊呀!！。]?$/.exec(
+      value,
+    );
+  if (moveRelative) {
+    const hint = extractHint(moveRelative[1], []);
+    const targetHint = extractHint(moveRelative[2], []);
+    if (hint && targetHint && hint !== targetHint) {
+      const place = /^(?:上面|上边|前面|前边|之前)$/.test(moveRelative[3]) ? "before" : "after";
+      return { kind: "move", hint, targetHint, place };
+    }
   }
 
   // 「大概 2 小时」：在回答上一条任务大概要花多久。
@@ -886,6 +918,22 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       return activityReply(now);
     case "undo":
       return chatReply(execute(store, { kind: "undo" }, now), now);
+    case "move": {
+      const command =
+        intent.targetHint !== undefined && (intent.place === "before" || intent.place === "after")
+          ? {
+              kind: "move" as const,
+              hint: intent.hint,
+              targetHint: intent.targetHint,
+              place: intent.place,
+            }
+          : {
+              kind: "move" as const,
+              hint: intent.hint,
+              place: intent.place === "top" ? ("top" as const) : ("bottom" as const),
+            };
+      return chatReply(execute(store, command, now), now);
+    }
     case "greeting":
       return greeting(store, now);
     case "help":

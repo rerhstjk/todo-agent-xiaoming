@@ -66,7 +66,7 @@ Windows PowerShell 用 `Copy-Item .env.example .env`。更多细节见[本地开
 ## 验证方式
 
 ```sh
-npm test          # 96 个离线测试：命令层、验收对话、API、模型工具循环、时区
+npm test          # 100 个离线测试：命令层、验收对话、API、模型工具循环、时区
 npm run demo      # 不开服务、不花模型费用，在终端跑一遍验收对话与扩展场景
 npm run typecheck
 npm run build

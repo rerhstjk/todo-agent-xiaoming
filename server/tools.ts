@@ -189,6 +189,31 @@ export const toolSchemas: ChatCompletionTool[] = [
   {
     type: "function",
     function: {
+      name: "move_task",
+      description:
+        "调整任务在清单里的先后顺序，例如「把买水果移到开会上面」「把开会放到最前面」。只改变顺序，不改变任务的时间。",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        required: ["title", "place"],
+        properties: {
+          title: { type: "string", description: "要移动的任务标题或关键词" },
+          target: {
+            type: "string",
+            description: "要排到它前面/后面的另一条任务；place 为 top/bottom 时不用传。",
+          },
+          place: {
+            type: "string",
+            enum: ["before", "after", "top", "bottom"],
+            description: "before 移到目标前面、after 移到目标后面、top 最前、bottom 最后。",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "manage_subtasks",
       description: "给任务添加、完成或删除子任务。",
       parameters: {
@@ -248,6 +273,12 @@ const updateArgs = z.object({
 
 const deleteArgs = z.object({
   title: z.string().trim().min(1),
+});
+
+const moveArgs = z.object({
+  title: z.string().trim().min(1),
+  target: z.string().trim().min(1).optional(),
+  place: z.enum(["before", "after", "top", "bottom"]),
 });
 
 const subtaskArgs = z.object({
@@ -404,6 +435,30 @@ export function runTool(
       }
       case "undo_delete":
         return toolReply(execute(store, { kind: "undo" }, now), now);
+      case "move_task": {
+        const args = moveArgs.parse(rawArgs);
+        if (args.place === "before" || args.place === "after") {
+          if (!args.target) {
+            return {
+              ok: false,
+              changed: false,
+              message: "要移到哪条任务的前面或后面？请先确认目标任务的标题。",
+            };
+          }
+          return toolReply(
+            execute(
+              store,
+              { kind: "move", hint: args.title, targetHint: args.target, place: args.place },
+              now,
+            ),
+            now,
+          );
+        }
+        return toolReply(
+          execute(store, { kind: "move", hint: args.title, place: args.place }, now),
+          now,
+        );
+      }
       case "delete_task": {
         const args = deleteArgs.parse(rawArgs);
         return toolReply(execute(store, { kind: "remove", hint: args.title }, now), now);

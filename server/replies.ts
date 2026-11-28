@@ -49,6 +49,8 @@ export function chatReply(result: CommandResult, now = new Date()): string {
       return clearDoneChat(result);
     case "undo":
       return undoChat(result);
+    case "move":
+      return moveChat(result);
   }
 }
 
@@ -92,6 +94,8 @@ export function toolReply(result: CommandResult, now = new Date()): ToolReply {
       };
     case "undo":
       return undoTool(result);
+    case "move":
+      return moveTool(result);
   }
 }
 
@@ -336,6 +340,29 @@ function nextRepeatLine(result: CommandResult, now: Date): string {
   const due = result.nextTask?.dueDate;
   if (!due) return "";
   return `下一次已排到${relativeDayLabel(due, now)}（${due}）。`;
+}
+
+function moveChat(result: CommandResult): string {
+  const task = result.task;
+  if (!task) return "这条任务已经不在清单里了。";
+  const command = result.command;
+  if (command.kind !== "move") return `已更新「${task.title}」。`;
+
+  if ("targetHint" in command) {
+    const target = result.target?.title ?? command.targetHint;
+    const direction = command.place === "before" ? "前面" : "后面";
+    return `已把「${task.title}」移到「${target}」${direction}。${pendingSummary(result.tasks)}`;
+  }
+  return `已把「${task.title}」移到最${command.place === "top" ? "前" : "后"}面。${pendingSummary(result.tasks)}`;
+}
+
+function moveTool(result: CommandResult): ToolReply {
+  return {
+    ok: result.status === "ok",
+    changed: result.changed,
+    message: moveChat(result),
+    data: result.task ? toPublicTask(result.task) : undefined,
+  };
 }
 
 function undoChat(result: CommandResult): string {

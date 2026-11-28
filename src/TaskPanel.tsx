@@ -84,6 +84,7 @@ export function TaskPanel({
   onToggleReminders,
   onEdit,
   onReorder,
+  onClearOrder,
   onAddSubtask,
 }: {
   tasks: ApiTask[];
@@ -106,6 +107,8 @@ export function TaskPanel({
   onEdit: (task: ApiTask, fields: TaskEditFields) => void | Promise<void>;
   /** 手动排序：按新顺序回写 position。 */
   onReorder: (ids: string[]) => void | Promise<void>;
+  /** 清除手动顺序，恢复按开始时间排序。 */
+  onClearOrder: () => void | Promise<void>;
   /** 在编辑表单里直接给任务加一条子任务。 */
   onAddSubtask: (task: ApiTask, title: string) => void | Promise<void>;
 }) {
@@ -166,6 +169,7 @@ export function TaskPanel({
     return true;
   });
 
+  const hasManualOrder = pool.some((task) => typeof task.position === "number");
   const sorted = [...pool].sort(compareTasks);
   const openTasks = sorted.filter((task) => !task.done && !isOverdue(task));
   const overdueTasks = sorted.filter((task) => isOverdue(task));
@@ -260,6 +264,10 @@ export function TaskPanel({
   }
 
   function toggleSortMode() {
+    if (hasManualOrder) {
+      void onClearOrder();
+      return;
+    }
     const next = sortMode === "time" ? "manual" : "time";
     setSortMode(next);
     if (next === "manual") {
@@ -676,11 +684,12 @@ export function TaskPanel({
               </button>
               <button
                 type="button"
-                className={`panel-toggle${sortMode === "manual" ? " active" : ""}`}
-                aria-pressed={sortMode === "manual"}
+                className={`panel-toggle${sortMode === "manual" || hasManualOrder ? " active" : ""}`}
+                aria-pressed={sortMode === "manual" || hasManualOrder}
                 onClick={toggleSortMode}
+                title={hasManualOrder ? "清除手动顺序，恢复按开始时间排序" : undefined}
               >
-                {sortMode === "manual" ? "手动排序" : "按时间排"}
+                {hasManualOrder ? "按时间排" : sortMode === "manual" ? "完成排序" : "手动排序"}
               </button>
             </>
           )}

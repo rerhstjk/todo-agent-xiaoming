@@ -205,6 +205,11 @@ export function compareTasks(a: ApiTask, b: ApiTask): number {
   const priority = (task: ApiTask) => weight[task.priority ?? "normal"] ?? 1;
   const moment = (task: ApiTask) => startMoment(task) ?? deadline(task);
 
+  // 手动排序过的任务按 position 排，其余任务接在后面。
+  const positionA = typeof a.position === "number" ? a.position : Number.POSITIVE_INFINITY;
+  const positionB = typeof b.position === "number" ? b.position : Number.POSITIVE_INFINITY;
+  if (positionA !== positionB) return positionA - positionB;
+
   const left = moment(a);
   const right = moment(b);
   if (left !== undefined && right !== undefined && left !== right) return left - right;

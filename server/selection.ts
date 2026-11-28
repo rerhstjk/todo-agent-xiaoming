@@ -49,6 +49,11 @@ function scheduleTime(task: Task): string | undefined {
  */
 export function sortByDue(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
+    // 手动排过序时 position 优先；没排过的任务按时间。
+    const positionA = typeof a.position === "number" ? a.position : Number.POSITIVE_INFINITY;
+    const positionB = typeof b.position === "number" ? b.position : Number.POSITIVE_INFINITY;
+    if (positionA !== positionB) return positionA - positionB;
+
     const left = scheduleMoment(a);
     const right = scheduleMoment(b);
     if (left !== right) {

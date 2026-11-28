@@ -8,7 +8,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { execute } from "./commands.ts";
-import { selectTasks } from "./selection.ts";
+import { selectTasks, sortByDue } from "./selection.ts";
 import { createJsonTaskStore, type TaskStore } from "./task-store.ts";
 
 /** 2026-11-26 是周四，本周最后一天是 11-29（周日）。 */
@@ -264,5 +264,56 @@ describe("clearDone", () => {
     const empty = execute(store, { kind: "clearDone" }, NOW);
     assert.equal(empty.status, "unchanged");
     assert.equal(empty.reason, "empty-list");
+  });
+});
+
+describe("move", () => {
+  test("把任务移到另一条前面，并给整张清单写入顺序", () => {
+    create("开会");
+    create("买牛奶");
+    create("取快递");
+
+    const result = execute(
+      store,
+      { kind: "move", hint: "买牛奶", targetHint: "开会", place: "before" },
+      NOW,
+    );
+    assert.equal(result.status, "ok");
+    assert.equal(result.changed, true);
+    assert.equal(result.target?.title, "开会");
+    assert.deepEqual(
+      sortByDue(store.list()).map((task) => task.title),
+      ["买牛奶", "开会", "取快递"],
+    );
+    assert.deepEqual(
+      store.list().map((task) => task.position),
+      [1, 0, 2],
+    );
+  });
+
+  test("可以移到最前和最后", () => {
+    create("开会");
+    create("买牛奶");
+    create("取快递");
+
+    execute(store, { kind: "move", hint: "取快递", place: "top" }, NOW);
+    assert.equal(store.list().find((task) => task.title === "取快递")?.position, 0);
+
+    execute(store, { kind: "move", hint: "取快递", place: "bottom" }, NOW);
+    assert.equal(store.list().find((task) => task.title === "取快递")?.position, 2);
+  });
+
+  test("目标不存在时返回 missing，不改动顺序", () => {
+    create("开会");
+    const before = store.list();
+
+    const result = execute(
+      store,
+      { kind: "move", hint: "开会", targetHint: "不存在的任务", place: "before" },
+      NOW,
+    );
+    assert.equal(result.status, "missing");
+    assert.equal(result.changed, false);
+    assert.deepEqual(store.list(), before);
   });
 });

@@ -1,5 +1,6 @@
 import { dayDiff, relativeDayLabel } from "./dates.ts";
 import { formatEffort } from "./effort.ts";
+import { sortByDue } from "./selection.ts";
 import { REPEAT_LABELS } from "./recurrence.ts";
 import {
   taskDueDate,
@@ -115,5 +116,7 @@ export function pendingSummary(tasks: Task[]): string {
     return tasks.length === 0 ? "清单已经清空了。" : "清单里没有待办了，全部完成。";
   }
   if (open.length > 5) return `还剩 ${open.length} 项待办。`;
-  return `还有 ${open.length} 项待办：${open.map((task) => `「${task.title}」`).join("、")}。`;
+  return `还有 ${open.length} 项待办：${sortByDue(open)
+    .map((task) => `「${task.title}」`)
+    .join("、")}。`;
 }
