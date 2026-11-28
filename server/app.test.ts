@@ -347,3 +347,29 @@ test("清单面板可以保存备注与手动排序序号", async (t) => {
   assert.equal(moved.status, 200);
   assert.equal(moved.body.position, 1);
 });
+
+test("没有开始时间和工作量的任务也能保存备注，空字段可以用 null 清空", async (t) => {
+  const { request } = await startTestApp(t);
+  const created = await request("POST", "/api/tasks", { title: "买牛奶" });
+
+  // 面板内联编辑会把这些空字段一起发过来；服务端必须接受 null，否则整次保存都会 400。
+  const noted = await request("PATCH", `/api/tasks/${created.body.id}`, {
+    title: "买牛奶",
+    startDate: null,
+    startTime: null,
+    priority: "normal",
+    effort: null,
+    note: "顺手买鸡蛋",
+  });
+  assert.equal(noted.status, 200);
+  assert.equal(noted.body.note, "顺手买鸡蛋");
+
+  const cleared = await request("PATCH", `/api/tasks/${created.body.id}`, {
+    note: null,
+    startDate: null,
+    startTime: null,
+  });
+  assert.equal(cleared.status, 200);
+  assert.equal(cleared.body.note, undefined);
+  assert.equal(cleared.body.startDate, undefined);
+});

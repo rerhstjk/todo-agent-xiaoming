@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { toEffortHours } from "./effort.ts";
 import { isRepeat, type Repeat } from "./recurrence.ts";
@@ -47,6 +47,11 @@ export interface Task {
 
 const storedTask = z.looseObject({ id: z.string(), title: z.string(), done: z.boolean() });
 const taskList = z.array(storedTask);
+
+/** 宽松解析一份任务清单；供 JSON / SQLite 两个存储后端共用。 */
+export function parseTaskList(input: unknown): Task[] {
+  return taskList.parse(input) as Task[];
+}
 
 const TITLE_MAX_LENGTH = 200;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -214,6 +219,49 @@ export function normalizeTitle(title: string): string {
   return trimmed;
 }
 
+/** 把创建参数整理成一条完整任务；两个存储后端共用。 */
+export function buildTask(input: string | NewTask): Task {
+  const draft = typeof input === "string" ? { title: input } : input;
+  const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
+  if (draft.note?.trim()) task.note = draft.note.trim();
+  if (isDateString(draft.startDate)) task.startDate = draft.startDate;
+  if (isDateString(draft.startDate) && isTimeString(draft.startTime))
+    task.startTime = draft.startTime;
+  if (isDateString(draft.dueDate)) task.dueDate = draft.dueDate;
+  if (isDateString(draft.dueDate) && isTimeString(draft.dueTime)) task.dueTime = draft.dueTime;
+  if (draft.priority) task.priority = draft.priority;
+  const effort = toEffortHours(draft.effort);
+  if (effort !== undefined) task.effort = effort;
+  const tags = normalizeTags(draft.tags);
+  if (tags.length > 0) task.tags = tags;
+  if (isRepeat(draft.repeat)) task.repeat = draft.repeat;
+  if (draft.remind === true) task.remind = true;
+  const reminderAt = normalizeReminderAt(draft.reminderAt);
+  if (reminderAt.length > 0) {
+    task.reminderAt = reminderAt;
+    // 传了具体提醒时刻就等于打开了提醒，避免出现「有提醒时刻但没有开关」的半截数据。
+    task.remind = true;
+  }
+
+  const subtasks = (draft.subtasks ?? [])
+    .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))
+    .filter((subtask) => subtask.title.length > 0);
+  if (subtasks.length > 0) task.subtasks = subtasks;
+  return task;
+}
+
+/** 对任务应用一组变更；null 表示删除该字段。两个存储后端共用。 */
+export function applyTaskChanges(task: Task, changes: TaskPatch): void {
+  if (changes.title !== undefined) changes = { ...changes, title: normalizeTitle(changes.title) };
+
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) continue;
+    if (value === null) delete task[key];
+    else task[key] = value;
+  }
+  if (Array.isArray(task.reminderAt) && task.reminderAt.length > 0) task.remind = true;
+}
+
 export function createJsonTaskStore(filename: string): TaskStore {
   function list(): Task[] {
     if (!existsSync(filename)) return [];
@@ -237,36 +285,6 @@ export function createJsonTaskStore(filename: string): TaskStore {
   // 被删掉的任务先留在内存里，供「撤销」恢复；不落盘，重启后就没有了。
   const deleted: Task[] = [];
 
-  function toTask(input: string | NewTask): Task {
-    const draft = typeof input === "string" ? { title: input } : input;
-    const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
-    if (draft.note?.trim()) task.note = draft.note.trim();
-    if (isDateString(draft.startDate)) task.startDate = draft.startDate;
-    if (isDateString(draft.startDate) && isTimeString(draft.startTime))
-      task.startTime = draft.startTime;
-    if (isDateString(draft.dueDate)) task.dueDate = draft.dueDate;
-    if (isDateString(draft.dueDate) && isTimeString(draft.dueTime)) task.dueTime = draft.dueTime;
-    if (draft.priority) task.priority = draft.priority;
-    const effort = toEffortHours(draft.effort);
-    if (effort !== undefined) task.effort = effort;
-    const tags = normalizeTags(draft.tags);
-    if (tags.length > 0) task.tags = tags;
-    if (isRepeat(draft.repeat)) task.repeat = draft.repeat;
-    if (draft.remind === true) task.remind = true;
-    const reminderAt = normalizeReminderAt(draft.reminderAt);
-    if (reminderAt.length > 0) {
-      task.reminderAt = reminderAt;
-      // 传了具体提醒时刻就等于打开了提醒，避免出现「有提醒时刻但没有开关」的半截数据。
-      task.remind = true;
-    }
-
-    const subtasks = (draft.subtasks ?? [])
-      .map((title) => ({ id: randomUUID(), title: title.trim(), done: false }))
-      .filter((subtask) => subtask.title.length > 0);
-    if (subtasks.length > 0) task.subtasks = subtasks;
-    return task;
-  }
-
   return {
     list,
 
@@ -275,7 +293,7 @@ export function createJsonTaskStore(filename: string): TaskStore {
     },
 
     create(input) {
-      const task = toTask(input);
+      const task = buildTask(input);
       save([...list(), task]);
       return task;
     },
@@ -284,16 +302,7 @@ export function createJsonTaskStore(filename: string): TaskStore {
       const tasks = list();
       const task = tasks.find((item) => item.id === id);
       if (!task) return undefined;
-      if (changes.title !== undefined)
-        changes = { ...changes, title: normalizeTitle(changes.title) };
-
-      for (const [key, value] of Object.entries(changes)) {
-        if (value === undefined) continue;
-        if (value === null) delete task[key];
-        else task[key] = value;
-      }
-      if (Array.isArray(task.reminderAt) && task.reminderAt.length > 0) task.remind = true;
-
+      applyTaskChanges(task, changes);
       save(tasks);
       return task;
     },
@@ -329,12 +338,4 @@ export function createJsonTaskStore(filename: string): TaskStore {
       return restored;
     },
   };
-}
-
-let shared: TaskStore | undefined;
-
-/** 服务端共用一个指向 data/tasks.json 的实例，智能体与任务 API 必须读写同一份清单。 */
-export function defaultTaskStore(): TaskStore {
-  shared ??= createJsonTaskStore(join("data", "tasks.json"));
-  return shared;
 }

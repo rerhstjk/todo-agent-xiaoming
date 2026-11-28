@@ -170,13 +170,30 @@ paths:
                   type: array
                   description: 整组子任务（用于前端清单面板勾选子任务），最多 50 条
                   items: { $ref: "#/components/schemas/Subtask" }
-                startDate: { type: string, description: 开始日期，YYYY-MM-DD }
-                startTime: { type: string, description: 开始时刻，HH:mm }
-                priority: { type: string, enum: [low, normal, high] }
-                effort: { type: number, minimum: 0, maximum: 100, description: 预计用时（小时） }
-                tags: { type: array, items: { type: string }, maxItems: 10 }
-                note: { type: string, maxLength: 2000, description: 备注 }
-                position: { type: integer, minimum: 0, maximum: 100000, description: 手动排序序号 }
+                startDate:
+                  { type: string, nullable: true, description: 开始日期，YYYY-MM-DD；传 null 清空 }
+                startTime:
+                  { type: string, nullable: true, description: 开始时刻，HH:mm；传 null 清空 }
+                priority: { type: string, nullable: true, enum: [low, normal, high] }
+                effort:
+                  {
+                    type: number,
+                    nullable: true,
+                    minimum: 0,
+                    maximum: 100,
+                    description: 预计用时（小时）；传 null 清空,
+                  }
+                tags: { type: array, nullable: true, items: { type: string }, maxItems: 10 }
+                note:
+                  { type: string, nullable: true, maxLength: 2000, description: 备注；传 null 清空 }
+                position:
+                  {
+                    type: integer,
+                    nullable: true,
+                    minimum: 0,
+                    maximum: 100000,
+                    description: 手动排序序号；传 null 清空,
+                  }
                 remind: { type: boolean, description: 打开或关闭单个任务的提醒 }
                 reminderAt:
                   type: array

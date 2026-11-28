@@ -239,7 +239,7 @@ export function TaskPanel({
       startTime: draft.startTime || null,
       priority: draft.priority,
       effort: effort === "" ? null : Number(effort),
-      note: draft.note,
+      note: draft.note.trim() === "" ? null : draft.note,
     });
     setEditingId(null);
     setDraft(null);

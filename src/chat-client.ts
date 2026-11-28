@@ -110,8 +110,8 @@ export type TaskEditFields = {
   startTime?: string | null;
   priority?: "low" | "normal" | "high";
   effort?: number | null;
-  note?: string;
-  position?: number;
+  note?: string | null;
+  position?: number | null;
 };
 
 export function updateTaskFields(id: string, fields: TaskEditFields): Promise<ApiTask> {

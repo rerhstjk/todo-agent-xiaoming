@@ -1,6 +1,6 @@
 import { createReply } from "./agent.ts";
 import { createApp } from "./app.ts";
-import { defaultTaskStore } from "./task-store.ts";
+import { defaultTaskStore } from "./default-store.ts";
 
 const tasks = defaultTaskStore();
 const app = createApp({ reply: createReply(tasks), tasks });
