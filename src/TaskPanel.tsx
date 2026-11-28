@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiTask } from "./chat-client.ts";
 import { TaskCalendar } from "./TaskCalendar.tsx";
+import type { ReminderPermission } from "./use-reminders.ts";
 import {
   compareTasks,
   dueBucket,
@@ -9,6 +10,7 @@ import {
   effortText,
   endOfWeek,
   isOverdue,
+  startText,
   toDateString,
   type DueBucket,
 } from "./task-dates.ts";
@@ -67,6 +69,8 @@ export function TaskPanel({
   onUndo,
   onBatchDone,
   onBatchDelete,
+  reminder,
+  onEnableReminders,
 }: {
   tasks: ApiTask[];
   loading: boolean;
@@ -81,6 +85,8 @@ export function TaskPanel({
   onUndo: () => void;
   onBatchDone: (tasks: ApiTask[]) => void;
   onBatchDelete: (tasks: ApiTask[]) => void;
+  reminder: ReminderPermission;
+  onEnableReminders: () => void;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
@@ -90,6 +96,13 @@ export function TaskPanel({
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectMode, setSelectMode] = useState(false);
+  const activeFilters =
+    (tagFilter !== "all" ? 1 : 0) +
+    (timeFilter !== "all" ? 1 : 0) +
+    (priorityFilter !== "all" ? 1 : 0) +
+    (effortFilter !== "all" ? 1 : 0);
   const today = toDateString(new Date());
   const weekEnd = endOfWeek();
 
@@ -174,13 +187,15 @@ export function TaskPanel({
     return (
       <div key={task.id} role="row" className={`panel-row${task.done ? " done" : ""}`}>
         <div className="cell-title" role="cell">
-          <input
-            type="checkbox"
-            className="row-select"
-            aria-label={`选择「${task.title}」`}
-            checked={selected.has(task.id)}
-            onChange={() => toggleSelected(task.id)}
-          />
+          {selectMode && (
+            <input
+              type="checkbox"
+              className="row-select"
+              aria-label={`选择「${task.title}」`}
+              checked={selected.has(task.id)}
+              onChange={() => toggleSelected(task.id)}
+            />
+          )}
           <button
             className="check"
             aria-label={task.done ? `把「${task.title}」重新打开` : `把「${task.title}」标记为完成`}
@@ -234,6 +249,9 @@ export function TaskPanel({
             ×
           </button>
         </div>
+        <span className="cell-start" role="cell">
+          {startText(task)}
+        </span>
         <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
           {dueText(task)}
         </span>
@@ -254,9 +272,32 @@ export function TaskPanel({
           <h2>全部任务</h2>
           <p className="panel-subtitle">用中文说一声就能新建、完成或删除任务。</p>
         </div>
-        <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">
-          {loading ? "刷新中…" : "刷新"}
-        </button>
+        <div className="panel-head-actions">
+          <button
+            className={`ghost${reminder === "granted" ? " active" : ""}`}
+            type="button"
+            onClick={onEnableReminders}
+            disabled={reminder === "unsupported"}
+            title={
+              reminder === "denied"
+                ? "浏览器已拒绝通知权限，可在站点设置里重新允许"
+                : reminder === "unsupported"
+                  ? "当前浏览器不支持系统通知"
+                  : "任务快到截止时间时弹出浏览器通知"
+            }
+          >
+            {reminder === "granted"
+              ? "提醒已开"
+              : reminder === "denied"
+                ? "提醒被拒"
+                : reminder === "unsupported"
+                  ? "无提醒"
+                  : "开启提醒"}
+          </button>
+          <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">
+            {loading ? "刷新中…" : "刷新"}
+          </button>
+        </div>
       </div>
       <div className="panel-views" role="tablist" aria-label="清单视图">
         <button
@@ -305,7 +346,7 @@ export function TaskPanel({
             ))}
           </div>
         )}
-        <div className="panel-filters">
+        <div className="panel-tools">
           <input
             className="panel-search"
             type="search"
@@ -314,64 +355,89 @@ export function TaskPanel({
             aria-label="搜索任务"
             onChange={(event) => setQuery(event.target.value)}
           />
-          <select
-            aria-label="按标签筛选"
-            className="panel-select"
-            value={tagFilter}
-            onChange={(event) => setTagFilter(event.target.value)}
+          <button
+            type="button"
+            className={`panel-toggle${showFilters || activeFilters > 0 ? " active" : ""}`}
+            aria-expanded={showFilters}
+            onClick={() => setShowFilters((value) => !value)}
           >
-            <option value="all">全部标签</option>
-            {allTags.map((tag) => (
-              <option key={tag} value={tag}>
-                #{tag}
-              </option>
-            ))}
-          </select>
+            筛选{activeFilters > 0 ? ` ${activeFilters}` : ""}
+          </button>
           {view === "list" && (
-            <select
-              aria-label="按时间筛选"
-              className="panel-select"
-              value={timeFilter}
-              onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
+            <button
+              type="button"
+              className={`panel-toggle${selectMode ? " active" : ""}`}
+              aria-pressed={selectMode}
+              onClick={() => {
+                setSelectMode((value) => !value);
+                setSelected(new Set());
+              }}
             >
-              {TIME_OPTIONS.map((item) => (
+              {selectMode ? "退出多选" : "多选"}
+            </button>
+          )}
+        </div>
+        {showFilters && (
+          <div className="panel-filters">
+            <select
+              aria-label="按标签筛选"
+              className="panel-select"
+              value={tagFilter}
+              onChange={(event) => setTagFilter(event.target.value)}
+            >
+              <option value="all">全部标签</option>
+              {allTags.map((tag) => (
+                <option key={tag} value={tag}>
+                  #{tag}
+                </option>
+              ))}
+            </select>
+            {view === "list" && (
+              <select
+                aria-label="按时间筛选"
+                className="panel-select"
+                value={timeFilter}
+                onChange={(event) => setTimeFilter(event.target.value as TimeFilter)}
+              >
+                {TIME_OPTIONS.map((item) => (
+                  <option key={item.value} value={item.value}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            <select
+              aria-label="按优先级筛选"
+              className="panel-select"
+              value={priorityFilter}
+              onChange={(event) => setPriorityFilter(event.target.value as PriorityFilter)}
+            >
+              <option value="all">全部优先级</option>
+              <option value="high">高优先级</option>
+              <option value="normal">中优先级</option>
+              <option value="low">低优先级</option>
+            </select>
+            <select
+              aria-label="按工作量筛选"
+              className="panel-select"
+              value={effortFilter}
+              onChange={(event) => setEffortFilter(event.target.value as EffortFilter)}
+            >
+              {EFFORT_OPTIONS.map((item) => (
                 <option key={item.value} value={item.value}>
                   {item.label}
                 </option>
               ))}
             </select>
-          )}
-          <select
-            aria-label="按优先级筛选"
-            className="panel-select"
-            value={priorityFilter}
-            onChange={(event) => setPriorityFilter(event.target.value as PriorityFilter)}
-          >
-            <option value="all">全部优先级</option>
-            <option value="high">高优先级</option>
-            <option value="normal">中优先级</option>
-            <option value="low">低优先级</option>
-          </select>
-          <select
-            aria-label="按工作量筛选"
-            className="panel-select"
-            value={effortFilter}
-            onChange={(event) => setEffortFilter(event.target.value as EffortFilter)}
-          >
-            {EFFORT_OPTIONS.map((item) => (
-              <option key={item.value} value={item.value}>
-                {item.label}
-              </option>
-            ))}
-          </select>
-        </div>
+          </div>
+        )}
       </div>
       {error && (
         <p className="error" role="alert">
           {error}
         </p>
       )}
-      {view === "list" && visible.length > 0 && (
+      {view === "list" && selectMode && (
         <div className="panel-batch">
           <button type="button" className="batch-select" onClick={selectVisible}>
             {selectedTasks.length === visible.length ? "取消全选" : "全选当前"}
@@ -411,6 +477,7 @@ export function TaskPanel({
         <div className="panel-table" role="table" aria-label="任务表格">
           <div className="panel-row panel-row-head" role="row">
             <span role="columnheader">任务名称</span>
+            <span role="columnheader">开始时间</span>
             <span role="columnheader">截止时间</span>
             <span role="columnheader">工作量</span>
             <span role="columnheader">优先级</span>

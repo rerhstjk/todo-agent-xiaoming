@@ -33,6 +33,8 @@ type Intent =
   | {
       kind: "create";
       title: string;
+      startDate?: string;
+      startTime?: string;
       dueDate?: string;
       dueTime?: string;
       priority?: Priority;
@@ -300,9 +302,9 @@ export function parseIntent(text: string, now = new Date()): Intent {
 
   if (LIST_WORDS.test(value)) return { kind: "list", scope: listScope(value) };
 
-  // 没写「记一下」但带了具体时刻，通常是随口交代一件要做的事，
-  // 例如「今晚5点去拿快递」。确认不是查询后再当成新建任务。
-  if (findClockTime(value)) return createIntent(value, now);
+  // 没写「记一下」但带了具体时刻或开始时间，通常是随口交代一件要做的事，
+  // 例如「今晚5点去拿快递」「从明天开始整理资料」。确认不是查询后再当成新建任务。
+  if (findClockTime(value) || findStartAt(value, now)) return createIntent(value, now);
 
   return { kind: "unknown" };
 }
@@ -345,6 +347,13 @@ function createIntent(text: string, now: Date): Intent {
     if (matched) monthlyDay = Number(matched[1]);
     value = value.replace(/每月\s*(?:\d{1,2}\s*[号日])?/g, " ");
   }
+  // 开始时间：「从明天开始」「明天下午三点开始」「9 点开始」。
+  // 必须放在截止日期之前解析，否则「明天」会被当成截止日期。
+  const start = findStartAt(value, now);
+  const startDate = start?.startDate;
+  const startTime = start?.startTime;
+  if (start) value = value.replace(start.matched, " ");
+
   let dueDate: string | undefined;
   let dueTime: string | undefined;
 
@@ -424,6 +433,8 @@ function createIntent(text: string, now: Date): Intent {
   return {
     kind: "create",
     title: value.slice(0, 200),
+    startDate,
+    startTime,
     dueDate,
     dueTime,
     priority,
@@ -431,6 +442,50 @@ function createIntent(text: string, now: Date): Intent {
     tags: tags.length > 0 ? tags : undefined,
     repeat,
   };
+}
+
+const START_PATTERN = new RegExp(
+  "(?:从|自)?\\s*(今天|明天|后天|大后天|(?:下下|下)?周[一二三四五六日天])?\\s*" +
+    "(凌晨|早上|早晨|上午|中午|下午|傍晚|晚上|夜里)?\\s*" +
+    "(\\d{1,2}|[一二三四五六七八九十两]+)?\\s*(?:点|时|[:：])?\\s*(半|\\d{1,2})?\\s*(?:开始|起)",
+);
+
+/** 从「从明天下午三点开始写报告」里取开始日期/时刻，并返回要剥离的原文。 */
+function findStartAt(
+  text: string,
+  now: Date,
+): { startDate?: string; startTime?: string; matched: string } | undefined {
+  const match = START_PATTERN.exec(text);
+  if (!match) return undefined;
+  const [, dateToken, period, hour, minute] = match;
+  if (!dateToken && !period && !hour) return undefined;
+
+  let startDate = dateToken ? findDateText(dateToken, now)?.value : undefined;
+  let startTime: string | undefined;
+
+  if (hour) {
+    const clockText = `${period ?? ""}${hour}点${minute ?? ""}`;
+    const clock = findClockTime(clockText);
+    startTime = clock?.value;
+    if (startTime && !startDate) {
+      const today = startOfDay(now);
+      if (clock?.day === "tomorrow") startDate = toDateString(addDays(today, 1));
+      else if (clock?.day === "today") startDate = toDateString(today);
+      else {
+        const [hourNumber, minuteNumber] = startTime.split(":").map(Number);
+        const candidate = new Date(
+          today.getFullYear(),
+          today.getMonth(),
+          today.getDate(),
+          hourNumber ?? 0,
+          minuteNumber ?? 0,
+        );
+        startDate = toDateString(candidate.getTime() <= now.getTime() ? addDays(today, 1) : today);
+      }
+    }
+  }
+
+  return { startDate, startTime, matched: match[0] };
 }
 
 /** 从「记一下买牛奶 #生活 #采购」「标签：生活、采购」里取出标签并从标题剥离。 */
@@ -542,6 +597,8 @@ function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date):
     if (parsed.kind !== "create") continue;
     const input: NewTaskInput = {
       title: parsed.title,
+      startDate: parsed.startDate,
+      startTime: parsed.startTime,
       dueDate: parsed.dueDate,
       dueTime: parsed.dueTime,
       priority: parsed.priority,
@@ -598,6 +655,8 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
             kind: "create",
             input: {
               title: intent.title,
+              startDate: intent.startDate,
+              startTime: intent.startTime,
               dueDate: intent.dueDate,
               dueTime: intent.dueTime,
               priority: intent.priority,

@@ -13,6 +13,8 @@ export interface PublicTask {
   id: string;
   title: string;
   done: boolean;
+  startDate?: string;
+  startTime?: string;
   dueDate?: string;
   dueTime?: string;
   priority?: Priority;
@@ -26,6 +28,8 @@ export interface PublicTask {
 
 export function toPublicTask(task: Task): PublicTask {
   const result: PublicTask = { id: task.id, title: task.title, done: task.done };
+  if (typeof task.startDate === "string" && task.startDate) result.startDate = task.startDate;
+  if (typeof task.startTime === "string" && task.startTime) result.startTime = task.startTime;
   if (typeof task.dueDate === "string" && task.dueDate) result.dueDate = task.dueDate;
   if (typeof task.dueTime === "string" && task.dueTime) result.dueTime = task.dueTime;
   if (task.priority) result.priority = task.priority;

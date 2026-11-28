@@ -21,6 +21,12 @@ import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
 import { suggestions } from "./suggestions.ts";
 import { useSpeechInput } from "./use-speech.ts";
+import {
+  reminderPermission,
+  requestReminderPermission,
+  useTaskReminders,
+  type ReminderPermission,
+} from "./use-reminders.ts";
 
 function isSendShortcut(event: KeyboardEvent<HTMLTextAreaElement>) {
   // 中文输入法会用 Enter 确认选词，部分浏览器此时只报告键码 229。
@@ -38,6 +44,7 @@ export default function App() {
   const [tasksError, setTasksError] = useState("");
   const [panelNotice, setPanelNotice] = useState("");
   const [undo, setUndo] = useState<{ count: number; label: string } | null>(null);
+  const [reminder, setReminder] = useState<ReminderPermission>(() => reminderPermission());
   const undoTimer = useRef<number | undefined>(undefined);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem("xiaoming.panelWidth"));
@@ -89,6 +96,23 @@ export default function App() {
       setTasksError(cause instanceof Error ? cause.message : "撤销失败。");
     } finally {
       void refreshTasks();
+    }
+  }
+
+  useTaskReminders(tasks);
+
+  async function enableReminders() {
+    if (reminder === "unsupported") return;
+    if (reminder === "granted") {
+      new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
+      return;
+    }
+    const result = await requestReminderPermission();
+    setReminder(result);
+    if (result === "granted") {
+      new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
+    } else if (result === "denied") {
+      setPanelNotice("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
     }
   }
 
@@ -403,6 +427,8 @@ export default function App() {
           onUndo={() => void undoRemoved()}
           onBatchDone={(items) => void batchDone(items)}
           onBatchDelete={(items) => void batchDelete(items)}
+          reminder={reminder}
+          onEnableReminders={() => void enableReminders()}
         />
       </main>
     </div>

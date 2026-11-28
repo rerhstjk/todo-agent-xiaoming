@@ -28,6 +28,14 @@ export const toolSchemas: ChatCompletionTool[] = [
         required: ["title"],
         properties: {
           title: { type: "string", description: "任务标题，去掉语气词，例如「买牛奶」" },
+          startDate: {
+            type: "string",
+            description: "开始日期，格式 YYYY-MM-DD；用户说「从明天开始」时才传。",
+          },
+          startTime: {
+            type: "string",
+            description: "开始时刻，格式 HH:mm；只有确实说了几点开始时才传。",
+          },
           dueDate: {
             type: "string",
             description: "截止日期，格式 YYYY-MM-DD。用户没提到日期就不要传。",
@@ -99,6 +107,14 @@ export const toolSchemas: ChatCompletionTool[] = [
         properties: {
           title: { type: "string", description: "要修改的任务标题或其中的关键词，例如「牛奶」" },
           newTitle: { type: "string", description: "新的任务标题，不改标题就不要传。" },
+          startDate: {
+            type: "string",
+            description: "新的开始日期 YYYY-MM-DD；传空字符串表示清除；不修改就不要传。",
+          },
+          startTime: {
+            type: "string",
+            description: "新的开始时刻 HH:mm；传空字符串表示清除；不修改就不要传。",
+          },
           done: { type: "boolean", description: "true 标记完成，false 重新打开。" },
           dueDate: {
             type: "string",
@@ -185,6 +201,8 @@ export const toolSchemas: ChatCompletionTool[] = [
 
 const createArgs = z.object({
   title: z.string().trim().min(1).max(200),
+  startDate: z.string().optional(),
+  startTime: z.string().optional(),
   dueDate: z.string().optional(),
   dueTime: z.string().optional(),
   priority: z.string().optional(),
@@ -203,6 +221,8 @@ const updateArgs = z.object({
   title: z.string().trim().min(1),
   newTitle: z.string().trim().min(1).max(200).optional(),
   done: z.boolean().optional(),
+  startDate: z.string().optional(),
+  startTime: z.string().optional(),
   dueDate: z.string().optional(),
   dueTime: z.string().optional(),
   priority: z.string().optional(),
@@ -247,6 +267,8 @@ export function runTool(
             kind: "create",
             input: {
               title: args.title,
+              startDate: normalizeDueDate(args.startDate, now),
+              startTime: normalizeDueTime(args.startTime),
               dueDate: normalizeDueDate(args.dueDate, now),
               dueTime: normalizeDueTime(args.dueTime),
               priority: parsePriority(args.priority) ?? undefined,
@@ -271,6 +293,38 @@ export function runTool(
         const patch: TaskPatch = {};
         if (args.done !== undefined) patch.done = args.done;
         if (args.newTitle) patch.title = args.newTitle;
+
+        if (args.startDate !== undefined) {
+          const value = args.startDate.trim();
+          if (!value) patch.startDate = null;
+          else {
+            const startDate = normalizeDueDate(value, now);
+            if (!startDate) {
+              return {
+                ok: false,
+                changed: false,
+                message: `无法识别日期「${args.startDate}」，请用 YYYY-MM-DD 格式。`,
+              };
+            }
+            patch.startDate = startDate;
+          }
+        }
+
+        if (args.startTime !== undefined) {
+          const value = args.startTime.trim();
+          if (!value) patch.startTime = null;
+          else {
+            const startTime = normalizeDueTime(value);
+            if (!startTime) {
+              return {
+                ok: false,
+                changed: false,
+                message: `无法识别时刻「${args.startTime}」，请用 HH:mm 格式。`,
+              };
+            }
+            patch.startTime = startTime;
+          }
+        }
 
         if (args.dueDate !== undefined) {
           const value = args.dueDate.trim();

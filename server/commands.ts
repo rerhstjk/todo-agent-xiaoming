@@ -8,6 +8,8 @@ import {
   taskEffortHours,
   taskPriority,
   taskRepeat,
+  taskStartDate,
+  taskStartTime,
   taskSubtasks,
   taskTags,
   type Priority,
@@ -25,6 +27,8 @@ export type SubtaskAction = "add" | "complete" | "remove";
 
 export interface NewTaskInput {
   title: string;
+  startDate?: string;
+  startTime?: string;
   dueDate?: string;
   dueTime?: string;
   priority?: Priority;
@@ -182,6 +186,8 @@ function setDone(
     result.nextTask = store.create({
       title: updated.title,
       note: typeof updated.note === "string" ? updated.note : undefined,
+      startDate: nextDueDate(taskStartDate(updated), repeat, now),
+      startTime: taskStartTime(updated),
       dueDate: nextDueDate(taskDueDate(updated), repeat, now),
       dueTime: taskDueTime(updated),
       priority: taskPriority(updated),

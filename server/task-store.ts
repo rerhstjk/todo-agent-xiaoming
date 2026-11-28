@@ -23,6 +23,10 @@ export interface Task {
   title: string;
   done: boolean;
   note?: string;
+  /** 开始日期，YYYY-MM-DD；用于「从明天开始」这类安排。 */
+  startDate?: string;
+  /** 开始时刻，HH:mm；只有 startDate 存在时才有意义。 */
+  startTime?: string;
   dueDate?: string;
   /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
   dueTime?: string;
@@ -47,6 +51,10 @@ const TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 export interface NewTask {
   title: string;
   note?: string;
+  /** 开始日期，YYYY-MM-DD；用于「从明天开始」这类安排。 */
+  startDate?: string;
+  /** 开始时刻，HH:mm；只有 startDate 存在时才有意义。 */
+  startTime?: string;
   dueDate?: string;
   /** 截止时刻，HH:mm；只有 dueDate 存在时才有意义。 */
   dueTime?: string;
@@ -62,6 +70,8 @@ export interface TaskPatch {
   title?: string;
   done?: boolean;
   note?: string | null;
+  startDate?: string | null;
+  startTime?: string | null;
   dueDate?: string | null;
   dueTime?: string | null;
   priority?: Priority | null;
@@ -91,6 +101,14 @@ export function isTimeString(value: unknown): value is string {
 
 export function taskDueTime(task: Task): string | undefined {
   return isTimeString(task.dueTime) ? task.dueTime : undefined;
+}
+
+export function taskStartDate(task: Task): string | undefined {
+  return isDateString(task.startDate) ? task.startDate : undefined;
+}
+
+export function taskStartTime(task: Task): string | undefined {
+  return isDateString(task.startDate) && isTimeString(task.startTime) ? task.startTime : undefined;
 }
 
 export function taskDueDate(task: Task): string | undefined {
@@ -184,6 +202,9 @@ export function createJsonTaskStore(filename: string): TaskStore {
     const draft = typeof input === "string" ? { title: input } : input;
     const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
     if (draft.note?.trim()) task.note = draft.note.trim();
+    if (isDateString(draft.startDate)) task.startDate = draft.startDate;
+    if (isDateString(draft.startDate) && isTimeString(draft.startTime))
+      task.startTime = draft.startTime;
     if (isDateString(draft.dueDate)) task.dueDate = draft.dueDate;
     if (isDateString(draft.dueDate) && isTimeString(draft.dueTime)) task.dueTime = draft.dueTime;
     if (draft.priority) task.priority = draft.priority;

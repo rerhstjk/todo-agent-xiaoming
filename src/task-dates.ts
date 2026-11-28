@@ -71,6 +71,15 @@ export function dueText(task: ApiTask): string {
   return `${relativeDayLabel(task.dueDate)}${time}`;
 }
 
+/** 开始时间列：今天 09:00 / 明天 / 11月30日 / —。 */
+export function startText(task: ApiTask): string {
+  if (task.startDate) {
+    const time = task.startTime ? ` ${task.startTime}` : "";
+    return `${relativeDayLabel(task.startDate)}${time}`;
+  }
+  return task.startTime ?? "—";
+}
+
 export function compareTasks(a: ApiTask, b: ApiTask): number {
   const weight: Record<string, number> = { high: 0, normal: 1, low: 2 };
   if (a.dueDate !== b.dueDate) {

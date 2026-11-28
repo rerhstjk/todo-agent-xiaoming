@@ -7,6 +7,8 @@ import {
   taskEffortHours,
   taskPriority,
   taskRepeat,
+  taskStartDate,
+  taskStartTime,
   taskSubtasks,
   taskTags,
   type Priority,
@@ -36,6 +38,12 @@ export function formatTaskBlock(task: Task, now = new Date()): string {
 /** 任务标题后面的补充信息，例如“（截止 明天 · 高优先级 · 子任务 1/2）”。 */
 export function taskDetails(task: Task, now: Date): string {
   const details: string[] = [];
+  const start = taskStartDate(task);
+  if (start) {
+    const time = taskStartTime(task);
+    details.push(`从${relativeDayLabel(start, now)}${time ? ` ${time} ` : ""}开始`);
+  }
+
   const due = taskDueDate(task);
   if (due) {
     const days = dayDiff(due, now);

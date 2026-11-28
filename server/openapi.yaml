@@ -123,6 +123,9 @@ components:
         id: { type: string, format: uuid }
         title: { $ref: "#/components/schemas/Title" }
         done: { type: boolean }
+        startDate: { type: string, description: 开始日期，YYYY-MM-DD }
+        startTime:
+          { type: string, description: 开始时刻，HH:mm（24 小时制），只有 startDate 存在时才有意义 }
         dueDate: { type: string, description: 截止日期，YYYY-MM-DD }
         dueTime:
           { type: string, description: 截止时刻，HH:mm（24 小时制），只有 dueDate 存在时才有意义 }

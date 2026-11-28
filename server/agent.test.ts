@@ -553,6 +553,48 @@ test("记具体时刻时会保存 HH:mm，并从标题里去掉", async () => {
   assert.match(reply, /17:00/);
 });
 
+test("可以记录开始时间，且不会混成截止时间", async () => {
+  const { store, send } = fixture();
+
+  const reply = await send("从明天下午三点开始写报告");
+  const task = store.list()[0];
+
+  assert.equal(task?.title, "写报告");
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "15:00");
+  assert.equal(task?.dueDate, undefined);
+  assert.match(reply, /从明天 15:00 开始/);
+
+  await send("从周一开始复习");
+  const review = store.list().find((item) => item.title === "复习");
+  assert.equal(review?.startDate, "2026-11-30");
+});
+
+test("开始时间和截止时间可以同时存在", async () => {
+  const { store } = fixture();
+
+  const created = runTool(
+    store,
+    "create_task",
+    {
+      title: "准备汇报",
+      startDate: "2026-11-27",
+      startTime: "09:00",
+      dueDate: "2026-11-30",
+    },
+    NOW,
+  );
+  assert.equal(created.ok, true);
+  const task = store.list()[0];
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "09:00");
+  assert.equal(task?.dueDate, "2026-11-30");
+
+  const updated = runTool(store, "update_task", { title: "准备汇报", startTime: "10:30" }, NOW);
+  assert.equal(updated.ok, true);
+  assert.equal(store.list()[0]?.startTime, "10:30");
+});
+
 test("中文时刻会换算成 24 小时制", async () => {
   const { store, send } = fixture();
 
