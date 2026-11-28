@@ -39,11 +39,12 @@ function saveNotified(notified: Set<string>): void {
 }
 
 /** 页面打开期间轮询任务；到截止前 30 分钟内弹一次浏览器通知（同一任务同一截止时刻只弹一次）。 */
-export function useTaskReminders(tasks: ApiTask[]): void {
+export function useTaskReminders(tasks: ApiTask[], enabled: boolean): void {
   const notified = useRef<Set<string> | null>(null);
   if (notified.current === null) notified.current = loadNotified();
 
   useEffect(() => {
+    if (!enabled) return;
     if (typeof Notification === "undefined") return;
 
     const check = () => {
@@ -63,5 +64,5 @@ export function useTaskReminders(tasks: ApiTask[]): void {
     check();
     const timer = window.setInterval(check, 30_000);
     return () => window.clearInterval(timer);
-  }, [tasks]);
+  }, [tasks, enabled]);
 }

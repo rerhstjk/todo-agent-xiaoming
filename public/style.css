@@ -451,7 +451,7 @@ textarea {
 }
 .panel-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px 96px 54px 40px;
+  grid-template-columns: minmax(0, 1fr) 84px 96px 54px 40px 18px;
   gap: 8px;
   align-items: start;
   padding: 8px 4px;
@@ -514,6 +514,9 @@ textarea {
 }
 .cell-due.overdue {
   color: #c02a1d;
+}
+.cell-delete {
+  text-align: right;
 }
 .cell-effort,
 .cell-priority {
@@ -817,7 +820,7 @@ textarea {
     border-top: 1px solid #e3e6ed;
   }
   .panel-row {
-    grid-template-columns: minmax(0, 1fr) 62px 80px 46px 34px;
+    grid-template-columns: minmax(0, 1fr) 62px 80px 46px 34px 16px;
   }
 }
 

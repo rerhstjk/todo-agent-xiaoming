@@ -70,7 +70,8 @@ export function TaskPanel({
   onBatchDone,
   onBatchDelete,
   reminder,
-  onEnableReminders,
+  reminderOn,
+  onToggleReminders,
 }: {
   tasks: ApiTask[];
   loading: boolean;
@@ -86,7 +87,8 @@ export function TaskPanel({
   onBatchDone: (tasks: ApiTask[]) => void;
   onBatchDelete: (tasks: ApiTask[]) => void;
   reminder: ReminderPermission;
-  onEnableReminders: () => void;
+  reminderOn: boolean;
+  onToggleReminders: () => void;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
@@ -241,13 +243,6 @@ export function TaskPanel({
               </ul>
             )}
           </div>
-          <button
-            className="delete"
-            aria-label={`删除「${task.title}」`}
-            onClick={() => onDelete(task)}
-          >
-            ×
-          </button>
         </div>
         <span className="cell-start" role="cell">
           {startText(task)}
@@ -260,6 +255,15 @@ export function TaskPanel({
         </span>
         <span className="cell-priority" role="cell">
           <span className={`priority ${priority}`}>{PRIORITY_LABELS[priority]}</span>
+        </span>
+        <span className="cell-delete" role="cell">
+          <button
+            className="delete"
+            aria-label={`删除「${task.title}」`}
+            onClick={() => onDelete(task)}
+          >
+            ×
+          </button>
         </span>
       </div>
     );
@@ -274,9 +278,10 @@ export function TaskPanel({
         </div>
         <div className="panel-head-actions">
           <button
-            className={`ghost${reminder === "granted" ? " active" : ""}`}
+            className={`ghost${reminderOn ? " active" : ""}`}
             type="button"
-            onClick={onEnableReminders}
+            aria-pressed={reminderOn}
+            onClick={onToggleReminders}
             disabled={reminder === "unsupported"}
             title={
               reminder === "denied"
@@ -286,12 +291,12 @@ export function TaskPanel({
                   : "任务快到截止时间时弹出浏览器通知"
             }
           >
-            {reminder === "granted"
-              ? "提醒已开"
+            {reminder === "unsupported"
+              ? "无提醒"
               : reminder === "denied"
                 ? "提醒被拒"
-                : reminder === "unsupported"
-                  ? "无提醒"
+                : reminderOn
+                  ? "提醒已开"
                   : "开启提醒"}
           </button>
           <button className="ghost" onClick={onRefresh} disabled={loading} aria-label="刷新清单">
@@ -481,6 +486,7 @@ export function TaskPanel({
             <span role="columnheader">截止时间</span>
             <span role="columnheader">工作量</span>
             <span role="columnheader">优先级</span>
+            <span role="columnheader" aria-label="操作" />
           </div>
           {visible.length === 0 ? (
             <p className="panel-empty">{loading ? "正在读取清单…" : emptyText}</p>

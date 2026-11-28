@@ -45,6 +45,12 @@ export default function App() {
   const [panelNotice, setPanelNotice] = useState("");
   const [undo, setUndo] = useState<{ count: number; label: string } | null>(null);
   const [reminder, setReminder] = useState<ReminderPermission>(() => reminderPermission());
+  const [reminderOn, setReminderOn] = useState(() => {
+    const saved = window.localStorage.getItem("xiaoming.reminders");
+    if (saved === "on") return reminderPermission() === "granted";
+    if (saved === "off") return false;
+    return reminderPermission() === "granted";
+  });
   const undoTimer = useRef<number | undefined>(undefined);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = Number(window.localStorage.getItem("xiaoming.panelWidth"));
@@ -99,17 +105,35 @@ export default function App() {
     }
   }
 
-  useTaskReminders(tasks);
+  useTaskReminders(tasks, reminderOn);
 
-  async function enableReminders() {
+  async function toggleReminders() {
     if (reminder === "unsupported") return;
+
+    if (reminderOn) {
+      setReminderOn(false);
+      window.localStorage.setItem("xiaoming.reminders", "off");
+      setPanelNotice("已关闭浏览器提醒，任务不会再弹系统通知。");
+      return;
+    }
+
+    if (reminder === "denied") {
+      setPanelNotice("浏览器已经拒绝通知权限，可以在地址栏的站点设置里重新允许。");
+      return;
+    }
+
     if (reminder === "granted") {
+      setReminderOn(true);
+      window.localStorage.setItem("xiaoming.reminders", "on");
       new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
       return;
     }
+
     const result = await requestReminderPermission();
     setReminder(result);
     if (result === "granted") {
+      setReminderOn(true);
+      window.localStorage.setItem("xiaoming.reminders", "on");
       new Notification("提醒已开启", { body: "任务快到期时，我会在这里提醒你。" });
     } else if (result === "denied") {
       setPanelNotice("浏览器拒绝了通知权限，可以在地址栏的站点设置里重新允许。");
@@ -428,7 +452,8 @@ export default function App() {
           onBatchDone={(items) => void batchDone(items)}
           onBatchDelete={(items) => void batchDelete(items)}
           reminder={reminder}
-          onEnableReminders={() => void enableReminders()}
+          reminderOn={reminderOn}
+          onToggleReminders={() => void toggleReminders()}
         />
       </main>
     </div>
