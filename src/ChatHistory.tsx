@@ -74,7 +74,7 @@ export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryPro
                     </button>
                   </footer>
                   <p className="message-edit-hint">
-                    发送后会从这里重新开始对话，后面的记录会被替换。
+                    发送后会回滚清单并从这条消息重新开始对话，后面的记录会被替换。
                   </p>
                 </form>
               ) : (
