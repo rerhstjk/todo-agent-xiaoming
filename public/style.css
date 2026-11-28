@@ -779,8 +779,8 @@ textarea {
 .task-edit textarea {
   border: 1px solid #e3e6ed;
   border-radius: 6px;
-  padding: 4px 6px;
-  font-size: 12px;
+  padding: 7px 8px;
+  font-size: 13px;
   color: #2c3446;
   background: white;
   font-family: inherit;

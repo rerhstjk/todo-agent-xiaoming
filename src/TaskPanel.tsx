@@ -487,7 +487,15 @@ export function TaskPanel({
               开始日期
               <input
                 type="date"
+                title="点击选择日期"
                 value={draft.startDate}
+                onClick={(event) => {
+                  try {
+                    event.currentTarget.showPicker?.();
+                  } catch {
+                    // 浏览器不支持或被拦截时仍可手动输入。
+                  }
+                }}
                 onChange={(event) => setDraft({ ...draft, startDate: event.target.value })}
               />
             </label>
@@ -495,7 +503,16 @@ export function TaskPanel({
               开始时刻
               <input
                 type="time"
+                title="点击选择时刻"
+                step="60"
                 value={draft.startTime}
+                onClick={(event) => {
+                  try {
+                    event.currentTarget.showPicker?.();
+                  } catch {
+                    // 浏览器不支持或被拦截时仍可手动输入。
+                  }
+                }}
                 onChange={(event) => setDraft({ ...draft, startTime: event.target.value })}
               />
             </label>
