@@ -522,6 +522,33 @@ textarea {
   padding: 1px 8px;
   border-radius: 999px;
 }
+.mini-group {
+  flex: none;
+  align-self: center;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.5;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: #eef0f4;
+  color: #5c687d;
+}
+.mini-group.group-today {
+  background: #fdece1;
+  color: #b8501c;
+}
+.mini-group.group-tomorrow {
+  background: #e8f0ff;
+  color: #2f6fed;
+}
+.mini-group.group-week {
+  background: #f1ebff;
+  color: #6a4bd8;
+}
+.mini-group.group-more {
+  background: #eef0f4;
+  color: #5c687d;
+}
 .group-count {
   font-size: 11px;
   color: #8a94a6;
@@ -1337,7 +1364,9 @@ textarea {
   padding: 5px 13px;
   font-size: 12.5px;
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition:
+    border-color 120ms ease,
+    background 120ms ease;
 }
 .quick-chip:hover {
   border-color: #9db9ea;

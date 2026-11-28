@@ -195,6 +195,8 @@ export function TaskPanel({
         (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER) ||
         compareTasks(a, b),
     );
+  // 只要清单里有过手动顺序，就按平铺顺序展示，避免分组把卡片又按日期拆开。
+  const hasManualOrder = tasks.some((task) => typeof task.position === "number");
   const rows = sorting ? (previewRows ?? manualRows) : visible;
   const listEmpty = sorting ? rows.length === 0 : visible.length === 0;
   const selectedTasks = (sorting ? rows : visible).filter((task) => selected.has(task.id));
@@ -305,6 +307,7 @@ export function TaskPanel({
     const priority = task.priority ?? "normal";
     const urgent = urgency(task);
     const editing = editingId === task.id;
+    const bucket = dueBucket(task, today, weekEnd);
     const repeat =
       task.repeat === "daily"
         ? "每天"
@@ -367,6 +370,9 @@ export function TaskPanel({
             </button>
             <div className="task-body">
               <div className="task-main">
+                {hasManualOrder && !sorting && status === "open" && (
+                  <span className={`mini-group group-${bucket}`}>{GROUP_META[bucket].label}</span>
+                )}
                 <button
                   type="button"
                   className="task-title-button"
@@ -825,6 +831,10 @@ export function TaskPanel({
                 拖动任务卡片调整顺序，松手就生效；排好后点「确认排序」退出。
               </p>
               {rows.map(renderRow)}
+            </div>
+          ) : hasManualOrder ? (
+            <div className="panel-group" role="rowgroup">
+              {visible.map(renderRow)}
             </div>
           ) : (
             shownGroups.map((group) => (
