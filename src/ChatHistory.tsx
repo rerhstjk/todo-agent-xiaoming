@@ -23,6 +23,7 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
   const [pickingTime, setPickingTime] = useState(false);
   const [pickDate, setPickDate] = useState(() => toDateString(new Date()));
   const [pickTime, setPickTime] = useState("");
+  const datePickRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
@@ -37,6 +38,19 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
     setPickingTime(false);
     setPickTime("");
   }, [messages.length]);
+
+  // 点「选时间」后直接弹系统日历，不用再点一次日期框。
+  useEffect(() => {
+    if (!pickingTime) return;
+    const timer = setTimeout(() => {
+      try {
+        datePickRef.current?.showPicker?.();
+      } catch {
+        // 一些浏览器不允许脚本主动打开选择器，退回手动点击日期框。
+      }
+    }, 30);
+    return () => clearTimeout(timer);
+  }, [pickingTime]);
 
   function startEditing(index: number, content: string) {
     setEditing(index);
@@ -137,6 +151,7 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
                         {pickingTime && (
                           <div className="message-quick-picker">
                             <input
+                              ref={datePickRef}
                               type="date"
                               value={pickDate}
                               aria-label="选择日期"
