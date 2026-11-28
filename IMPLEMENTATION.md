@@ -17,7 +17,7 @@ npm run dev          # 打开 http://127.0.0.1:3000
 ## 验证
 
 ```sh
-npm test             # 95 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
+npm test             # 96 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
 npm run demo         # 不开服务、不花模型费用，直接在终端跑一遍验收对话和扩展场景
 npm run typecheck
 npm run build
@@ -60,7 +60,8 @@ src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/tas
   明确说「子任务：…」时挂到刚建的任务下，子任务按任务 id 关联，同名任务也不会挂错。
 - `server/replies.ts`：渲染层。同一份 `CommandResult` 有两种输出：`chatReply()` 给用户看，
   `toolReply()` 给模型看（消息 + 结构化 data）。文案只写一遍，两个入口不会漂移。
-- **同批任务与追问**：任务内部带 `createdAt`（不暴露在 HTTP 契约里），同一句创建的多条任务
+- **同批任务与追问**：快捷回复里的「选时间」打开原生日期 + 时刻选择器，确认后把
+  `YYYY-MM-DD HH:mm` 作为一句话发给智能体，规则引擎与模型都能直接解析。任务内部带 `createdAt`（不暴露在 HTTP 契约里），同一句创建的多条任务
   据此识别为一批；`scheduleFollowUp` 回答完一条的时间后，按批次找下一条继续问，不会把旧任务
   重新翻出来问。快捷回复按上一条回复的措辞匹配，渲染在助手消息正下方。
 - `server/activity.ts`：面板操作记录。清单面板（HTTP API）的增删改会记下「谁在什么时候

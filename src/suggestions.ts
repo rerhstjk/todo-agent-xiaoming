@@ -3,6 +3,8 @@ export interface Suggestion {
   label: string;
   /** 实际发给小明的整句话。 */
   text: string;
+  /** 特殊动作：打开日期/时间选择器，而不是直接发送。 */
+  action?: "pick-time";
 }
 
 /**
@@ -27,6 +29,7 @@ export function quickRepliesFor(text: string): Suggestion[] {
     return [
       { label: "今天", text: "今天" },
       { label: "明天下午三点", text: "明天下午三点" },
+      { label: "选时间", text: "", action: "pick-time" },
       { label: "暂不设置", text: "暂不设置" },
     ];
   }

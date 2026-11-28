@@ -1012,6 +1012,17 @@ test("一句话列了多件事时会拆成多条任务，并逐条问时间", as
   assert.equal(pickup?.startTime, "15:00");
 });
 
+test("快捷回复里选具体日期和时刻也能解析", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下拿快递");
+  const scheduled = await send("2026-11-28 15:00");
+  assert.match(scheduled, /15:00/);
+  const task = store.list()[0];
+  assert.equal(task?.startDate, "2026-11-28");
+  assert.equal(task?.startTime, "15:00");
+});
+
 test("回答暂不设置时保留无时间任务，提问也不会被误当成时间", async () => {
   const { store, send } = fixture();
 

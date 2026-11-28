@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
 import { parseChatTasks, type ChatTaskRow } from "./task-message.ts";
 import { quickRepliesFor } from "./suggestions.ts";
+import { toDateString } from "./task-dates.ts";
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
@@ -19,6 +20,9 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
     -1,
   );
   const [draft, setDraft] = useState("");
+  const [pickingTime, setPickingTime] = useState(false);
+  const [pickDate, setPickDate] = useState(() => toDateString(new Date()));
+  const [pickTime, setPickTime] = useState("");
 
   useEffect(() => {
     if (viewport.current) viewport.current.scrollTop = viewport.current.scrollHeight;
@@ -28,6 +32,11 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
   useEffect(() => {
     if (pending) setEditing(null);
   }, [pending]);
+
+  useEffect(() => {
+    setPickingTime(false);
+    setPickTime("");
+  }, [messages.length]);
 
   function startEditing(index: number, content: string) {
     setEditing(index);
@@ -98,17 +107,69 @@ export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: 
                     quickRepliesFor(message.content).length > 0 && (
                       <div className="message-quick" aria-label="快捷回复">
                         <span className="message-quick-label">快捷回复</span>
-                        {quickRepliesFor(message.content).map((item) => (
-                          <button
-                            key={item.text}
-                            type="button"
-                            className="quick-chip"
-                            title={`点一下直接发送：${item.text}`}
-                            onClick={() => onQuickReply(item.text)}
-                          >
-                            {item.label}
-                          </button>
-                        ))}
+                        {quickRepliesFor(message.content).map((item) =>
+                          item.action === "pick-time" ? (
+                            <button
+                              key="pick-time"
+                              type="button"
+                              className="quick-chip pick-time"
+                              title="打开日历选日期，也可以加一个时刻"
+                              onClick={() => {
+                                setPickDate(toDateString(new Date()));
+                                setPickTime("");
+                                setPickingTime(true);
+                              }}
+                            >
+                              {item.label}
+                            </button>
+                          ) : (
+                            <button
+                              key={item.text}
+                              type="button"
+                              className="quick-chip"
+                              title={`点一下直接发送：${item.text}`}
+                              onClick={() => onQuickReply(item.text)}
+                            >
+                              {item.label}
+                            </button>
+                          ),
+                        )}
+                        {pickingTime && (
+                          <div className="message-quick-picker">
+                            <input
+                              type="date"
+                              value={pickDate}
+                              aria-label="选择日期"
+                              onChange={(event) => setPickDate(event.target.value)}
+                            />
+                            <input
+                              type="time"
+                              value={pickTime}
+                              aria-label="选择时刻（可留空）"
+                              onChange={(event) => setPickTime(event.target.value)}
+                            />
+                            <button
+                              type="button"
+                              className="picker-confirm"
+                              disabled={!pickDate}
+                              onClick={() => {
+                                if (!pickDate) return;
+                                const text = pickTime ? `${pickDate} ${pickTime}` : pickDate;
+                                setPickingTime(false);
+                                onQuickReply(text);
+                              }}
+                            >
+                              确定
+                            </button>
+                            <button
+                              type="button"
+                              className="picker-cancel"
+                              onClick={() => setPickingTime(false)}
+                            >
+                              取消
+                            </button>
+                          </div>
+                        )}
                       </div>
                     )}
                   {index === lastUserIndex && !pending && (
