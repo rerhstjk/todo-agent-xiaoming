@@ -70,12 +70,12 @@ test("按 README 的验收对话完整走一遍", async () => {
 
 test("任务写入 data/tasks.json，重新创建 store 后仍可查询", async () => {
   const { dir, store } = fixture();
-  store.create({ title: "买牛奶", dueDate: "2026-11-27", priority: "high" });
+  store.create({ title: "买牛奶", startDate: "2026-11-27", priority: "high" });
 
   const reopened = createJsonTaskStore(join(dir, "tasks.json"));
   const [task] = reopened.list();
   assert.equal(task?.title, "买牛奶");
-  assert.equal(task?.dueDate, "2026-11-27");
+  assert.equal(task?.startDate, "2026-11-27");
   assert.equal(task?.priority, "high");
 });
 
@@ -161,12 +161,12 @@ test("有歧义时先追问，回复序号后继续完成", async () => {
   assert.equal(store.list().find((task) => task.title === "买牛奶")?.done, false);
 });
 
-test("修改截止日期与优先级", async () => {
+test("修改开始日期与优先级", async () => {
   const { store, send } = fixture();
 
   await send("记一下交报告");
-  await send("把交报告的截止日期改到后天");
-  assert.equal(store.list()[0]?.dueDate, "2026-11-28");
+  await send("把交报告的开始日期改到后天");
+  assert.equal(store.list()[0]?.startDate, "2026-11-28");
 
   await send("把交报告设为高优先级");
   assert.equal(store.list()[0]?.priority, "high");
@@ -405,7 +405,7 @@ test("「记一下」和下周一连在一起时，不会误判成下下周", as
   const task = store.list()[0];
 
   assert.equal(task?.title, "开周会");
-  assert.equal(task?.dueDate, "2026-11-30");
+  assert.equal(task?.startDate, "2026-11-30");
   assert.match(reply, /下周一/);
 });
 
@@ -433,7 +433,7 @@ test("一句话里的两件事会拆成两条任务，各自的日期都保留",
   const meeting = store.list().find((task) => task.title === "开会");
   assert.equal(meeting?.startDate, "2026-11-27");
   const prepare = store.list().find((task) => task.title.includes("准备材料"));
-  assert.equal(prepare?.dueDate, "2026-11-26");
+  assert.equal(prepare?.startDate, "2026-11-26");
   assert.match(reply, /已记下 2 条任务/);
   assert.doesNotMatch(reply, /开会，并在今天/);
 });
@@ -551,8 +551,8 @@ test("记具体时刻时会保存 HH:mm，并从标题里去掉", async () => {
   const task = store.list()[0];
 
   assert.equal(task?.title, "去拿快递");
-  assert.equal(task?.dueDate, "2026-11-26");
-  assert.equal(task?.dueTime, "17:00");
+  assert.equal(task?.startDate, "2026-11-26");
+  assert.equal(task?.startTime, "17:00");
   assert.match(reply, /17:00/);
 });
 
@@ -566,14 +566,14 @@ test("可以记录开始时间，且不会混成截止时间", async () => {
   assert.equal(task?.startDate, "2026-11-27");
   assert.equal(task?.startTime, "15:00");
   assert.equal(task?.dueDate, undefined);
-  assert.match(reply, /从明天 15:00 开始/);
+  assert.match(reply, /开始 明天 15:00/);
 
   await send("从周一开始复习");
   const review = store.list().find((item) => item.title === "复习");
   assert.equal(review?.startDate, "2026-11-30");
 });
 
-test("开始时间和截止时间可以同时存在", async () => {
+test("旧的截止参数会落到开始时间上", async () => {
   const { store } = fixture();
 
   const created = runTool(
@@ -591,7 +591,7 @@ test("开始时间和截止时间可以同时存在", async () => {
   const task = store.list()[0];
   assert.equal(task?.startDate, "2026-11-27");
   assert.equal(task?.startTime, "09:00");
-  assert.equal(task?.dueDate, "2026-11-30");
+  assert.equal(task?.dueDate, undefined);
 
   const updated = runTool(store, "update_task", { title: "准备汇报", startTime: "10:30" }, NOW);
   assert.equal(updated.ok, true);
@@ -606,11 +606,11 @@ test("中文时刻会换算成 24 小时制", async () => {
 
   const [meeting, report] = store.list();
   assert.equal(meeting?.title, "开会");
-  assert.equal(meeting?.dueDate, "2026-11-27");
-  assert.equal(meeting?.dueTime, "10:30");
+  assert.equal(meeting?.startDate, "2026-11-27");
+  assert.equal(meeting?.startTime, "10:30");
   assert.equal(report?.title, "交报告");
-  assert.equal(report?.dueDate, "2026-11-26");
-  assert.equal(report?.dueTime, "15:00");
+  assert.equal(report?.startDate, "2026-11-26");
+  assert.equal(report?.startTime, "15:00");
 });
 
 test("只说时刻且今天已经过了时，顺延到明天", async () => {
@@ -619,11 +619,11 @@ test("只说时刻且今天已经过了时，顺延到明天", async () => {
   await send("5点去拿快递");
   const task = store.list()[0];
 
-  assert.equal(task?.dueDate, "2026-11-27");
-  assert.equal(task?.dueTime, "05:00");
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "05:00");
 });
 
-test("清单回复带截止时刻，且不再加感叹号标记", async () => {
+test("清单回复带开始时刻，且不再加感叹号标记", async () => {
   const { store, send } = fixture();
 
   await send("今晚5点拿快递");
@@ -640,7 +640,7 @@ test("清单回复带截止时刻，且不再加感叹号标记", async () => {
   assert.equal(store.list().length, 2);
 });
 
-test("模型工具也支持写具体时刻和清除时刻", async () => {
+test("模型工具写具体时刻时落到开始时间", async () => {
   const dir = mkdtempSync(join(tmpdir(), "xiaoming-tool-"));
   tempDirs.push(dir);
   const store = createJsonTaskStore(join(dir, "tasks.json"));
@@ -656,15 +656,15 @@ test("模型工具也支持写具体时刻和清除时刻", async () => {
     NOW,
   );
   assert.equal(created.ok, true);
-  assert.equal(store.list()[0]?.dueTime, "17:00");
+  assert.equal(store.list()[0]?.startTime, "17:00");
 
   const updated = runTool(store, "update_task", { title: "拿快递", dueTime: "18:30" }, NOW);
   assert.equal(updated.ok, true);
-  assert.equal(store.list()[0]?.dueTime, "18:30");
+  assert.equal(store.list()[0]?.startTime, "18:30");
 
-  runTool(store, "update_task", { title: "拿快递", dueDate: "" }, NOW);
-  assert.equal(store.list()[0]?.dueDate, undefined);
-  assert.equal(store.list()[0]?.dueTime, undefined);
+  runTool(store, "update_task", { title: "拿快递", startDate: "" }, NOW);
+  assert.equal(store.list()[0]?.startDate, undefined);
+  assert.equal(store.list()[0]?.startTime, undefined);
 });
 
 test("没提预计用时时会追问，回答小时数后补到任务上", async () => {
@@ -686,7 +686,7 @@ test("创建时说的“预计半小时”记成 0.5 小时，且不留在标题
   const task = store.list()[0];
   assert.equal(task?.title, "买牛奶");
   assert.equal(task?.effort, 0.5);
-  assert.equal(task?.dueTime, "20:00");
+  assert.equal(task?.startTime, "20:00");
 });
 
 test("可以直接修改任务的工作量", async () => {
@@ -815,21 +815,20 @@ test("三分钟后、半小时后这类相对时间直接换算，不用反问�
   assert.equal(meeting?.title, "开会");
   assert.equal(meeting?.startDate, "2026-11-26");
   assert.equal(meeting?.startTime, "09:03");
-  assert.equal(meeting?.dueDate, undefined);
   assert.equal(meeting?.priority, "high");
 
   await send("半小时后提醒我喝水");
   assert.equal(store.list()[1]?.startTime, "09:30");
 
   await send("一个半小时后打电话");
-  assert.equal(store.list()[2]?.dueTime, "10:30");
+  assert.equal(store.list()[2]?.startTime, "10:30");
 
   await send("两小时后睡觉");
-  assert.equal(store.list()[3]?.dueTime, "11:00");
+  assert.equal(store.list()[3]?.startTime, "11:00");
 
   await send("三天后交报告");
-  assert.equal(store.list()[4]?.dueDate, "2026-11-29");
-  assert.equal(store.list()[4]?.dueTime, undefined);
+  assert.equal(store.list()[4]?.startDate, "2026-11-29");
+  assert.equal(store.list()[4]?.startTime, undefined);
 });
 
 test("创建带时间的任务时会问要不要提醒，回「要」后打开", async () => {

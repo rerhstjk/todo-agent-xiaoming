@@ -85,7 +85,7 @@ function clockString(timestamp: number): string {
 
 /**
  * 任务实际会提醒的时刻（与服务端 `server/reminders.ts` 保持一致）：
- * 用户指定了提醒时刻就只按指定的来，否则开始前 30 分钟、截止前 10 分钟各一次。
+ * 用户指定了提醒时刻就只按指定的来，否则开始前 30 分钟一次（老数据的截止时间也补一次）。
  */
 export function reminderPlan(task: ApiTask): TaskReminder[] {
   if (task.remind !== true) return [];
@@ -128,9 +128,11 @@ export function reminderDetail(task: ApiTask): string {
   return plan.length > 0 ? plan.map((entry) => entry.label).join("、") : "";
 }
 
+/** 开始日期已经过去、还没完成，就算逾期。 */
 export function isOverdue(task: ApiTask): boolean {
-  const moment = deadline(task);
-  return !task.done && moment !== undefined && moment < Date.now();
+  if (task.done) return false;
+  const date = task.startDate ?? task.dueDate;
+  return date !== undefined && date < toDateString(new Date());
 }
 
 /** 列表里的截止时间：今天 17:00 / 明天 09:30 / 11月30日 / 已逾期 · 11月26日。 */
@@ -145,11 +147,12 @@ export function dueText(task: ApiTask): string {
 
 /** 开始时间列：今天 09:00 / 明天 / 11月30日 / —。 */
 export function startText(task: ApiTask): string {
-  if (task.startDate) {
-    const time = task.startTime ? ` ${task.startTime}` : "";
-    return `${relativeDayLabel(task.startDate)}${time}`;
+  const date = task.startDate ?? task.dueDate;
+  if (date) {
+    const time = (task.startTime ?? task.dueTime) ? ` ${task.startTime ?? task.dueTime}` : "";
+    return `${relativeDayLabel(date)}${time}`;
   }
-  return task.startTime ?? "—";
+  return task.startTime ?? task.dueTime ?? "—";
 }
 
 /**
@@ -177,13 +180,13 @@ function addDaysString(date: string, days: number): string {
   return toDateString(parsed);
 }
 
-/** 把任务按截止时间分到「逾期 / 今天 / 明天 / 本周 / 更多」。 */
+/** 把任务按开始时间分到「逾期 / 今天 / 明天 / 本周 / 更多」。 */
 export function dueBucket(
   task: ApiTask,
   today = toDateString(new Date()),
   weekEnd = endOfWeek(),
 ): DueBucket {
-  const date = task.dueDate ?? task.startDate;
+  const date = task.startDate ?? task.dueDate;
   if (!date) return "more";
   if (date < today) return "overdue";
   if (date === today) return "today";

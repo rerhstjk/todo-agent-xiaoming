@@ -5,7 +5,6 @@ import type { ReminderPermission } from "./use-reminders.ts";
 import {
   compareTasks,
   dueBucket,
-  dueText,
   effortHours,
   effortText,
   endOfWeek,
@@ -254,11 +253,8 @@ export function TaskPanel({
             )}
           </div>
         </div>
-        <span className="cell-start" role="cell">
+        <span className={`cell-start${overdue ? " overdue" : ""}`} role="cell">
           {startText(task)}
-        </span>
-        <span className={`cell-due${overdue ? " overdue" : ""}`} role="cell">
-          {dueText(task)}
         </span>
         <span className="cell-effort" role="cell">
           {effortText(task)}
@@ -298,7 +294,7 @@ export function TaskPanel({
                 ? "浏览器已拒绝通知权限，可在站点设置里重新允许"
                 : reminder === "unsupported"
                   ? "当前浏览器不支持系统通知"
-                  : "任务快到截止时间时弹出浏览器通知"
+                  : "任务快开始时弹出浏览器通知"
             }
           >
             {reminder === "unsupported"
@@ -493,7 +489,6 @@ export function TaskPanel({
           <div className="panel-row panel-row-head" role="row">
             <span role="columnheader">任务名称</span>
             <span role="columnheader">开始时间</span>
-            <span role="columnheader">截止时间</span>
             <span role="columnheader">工作量</span>
             <span role="columnheader">优先级</span>
             <span role="columnheader" aria-label="操作" />

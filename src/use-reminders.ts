@@ -73,21 +73,25 @@ export function useTaskReminders(
             body: `${reminder.task.title} · ${reminder.label}`,
             tag: reminder.key,
           });
-        } catch {
-          // 某些浏览器在后台标签页会拒绝构造通知；页面内的提示已经兜住了。
+        } catch (error) {
+          // Safari 在某些状态下会拒绝构造通知；页面内的提示已经兜住了。
+          console.warn("[xiaoming] 无法弹出系统通知，已改为页面内提示：", error);
         }
       }
     };
 
     check();
-    const timer = window.setInterval(check, 30_000);
+    // Safari 在后台标签页会节流定时器，回到前台、窗口重新获得焦点时都补查一次。
+    const timer = window.setInterval(check, 15_000);
     const onVisible = () => {
       if (document.visibilityState === "visible") check();
     };
     document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", check);
     return () => {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", check);
     };
   }, [tasks, enabled]);
 }

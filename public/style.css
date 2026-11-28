@@ -552,7 +552,7 @@ textarea {
 }
 .panel-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 84px 96px 54px 40px 18px;
+  grid-template-columns: minmax(0, 1fr) 96px 54px 40px 18px;
   gap: 8px;
   align-items: start;
   padding: 8px 4px;
@@ -604,8 +604,7 @@ textarea {
   color: #8b95a8;
   white-space: nowrap;
 }
-.cell-start,
-.cell-due {
+.cell-start {
   font-size: 12px;
   color: #5c687d;
   line-height: 1.5;
@@ -613,7 +612,7 @@ textarea {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.cell-due.overdue {
+.cell-start.overdue {
   color: #c02a1d;
 }
 .cell-delete {
@@ -981,7 +980,7 @@ textarea {
     border-top: 1px solid #e3e6ed;
   }
   .panel-row {
-    grid-template-columns: minmax(0, 1fr) 62px 80px 46px 34px 16px;
+    grid-template-columns: minmax(0, 1fr) 74px 46px 34px 16px;
   }
 }
 

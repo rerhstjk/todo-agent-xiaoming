@@ -39,8 +39,6 @@ type Intent =
       title: string;
       startDate?: string;
       startTime?: string;
-      dueDate?: string;
-      dueTime?: string;
       priority?: Priority;
       effort?: number;
       tags?: string[];
@@ -52,7 +50,7 @@ type Intent =
   | { kind: "reminderToggle" }
   | { kind: "action"; action: Action; hint: string }
   | { kind: "rename"; hint: string; title: string }
-  | { kind: "update"; hint: string; dueDate?: string; priority?: Priority; effort?: number }
+  | { kind: "update"; hint: string; startDate?: string; priority?: Priority; effort?: number }
   | { kind: "duration"; hours: number }
   | { kind: "subtask"; hint: string; action: "add" | "complete" | "remove"; subtask: string }
   | { kind: "subtaskUnclear" }
@@ -204,13 +202,13 @@ export function parseIntent(text: string, now = new Date()): Intent {
   }
 
   const dueUpdate =
-    /^(?:把|将)?\s*(.+?)\s*(?:的)?\s*(?:截止(?:日期|时间)?|到期日|due)\s*(?:改到|改成|设为|设置成|推迟到|提前到|是)\s*(.+)$/i.exec(
+    /^(?:把|将)?\s*(.+?)\s*(?:的)?\s*(?:开始(?:日期|时间)?|截止(?:日期|时间)?|到期日|due)\s*(?:改到|改成|设为|设置成|推迟到|提前到|是)\s*(.+)$/i.exec(
       value,
     );
   if (dueUpdate) {
     const hint = extractHint(dueUpdate[1], []);
     const dueDate = findDateText(dueUpdate[2], now)?.value;
-    if (hint && dueDate) return { kind: "update", hint, dueDate };
+    if (hint && dueDate) return { kind: "update", hint, startDate: dueDate };
   }
 
   // 「把开会的工作量改成 2 小时」「给开会记 2 小时」：改预计用时。
@@ -311,7 +309,7 @@ export function parseIntent(text: string, now = new Date()): Intent {
     const title = cleanTitle(rename[2]);
     const parsedDate = findDateText(title, now);
     if (hint && parsedDate && parsedDate.matched === title) {
-      return { kind: "update", hint, dueDate: parsedDate.value };
+      return { kind: "update", hint, startDate: parsedDate.value };
     }
     if (hint && title) return { kind: "rename", hint, title };
   }
@@ -454,8 +452,6 @@ function createIntent(text: string, now: Date): Intent {
     momentDate = toDateString(candidate);
   }
 
-  let dueDate: string | undefined;
-  let dueTime: string | undefined;
   if (reminderLead) {
     if (!startDate) {
       startDate = momentDate;
@@ -465,17 +461,17 @@ function createIntent(text: string, now: Date): Intent {
     // 「会前 20 分钟提醒」说明这个时刻是开会时间，也就是任务的开始时间。
     startDate = startDate ?? momentDate;
     startTime = startTime ?? momentTime;
-  } else {
-    dueDate = momentDate;
-    dueTime = momentTime;
+  } else if (momentDate && !startDate) {
+    startDate = momentDate;
+    startTime = momentTime;
   }
 
   let remind: boolean | undefined;
   let reminderAt: string[] | undefined;
   if (reminderBefore) {
-    const useDue = reminderBefore.anchor === "due" || (!startDate && Boolean(dueDate));
-    const date = useDue ? dueDate : startDate;
-    const time = useDue ? (dueTime ?? "23:59") : (startTime ?? "09:00");
+    // 清单只有一个时间轴（开始时间），「提前 / 会前 / 截止前」都以它为准。
+    const date = startDate ?? momentDate;
+    const time = startTime ?? momentTime ?? "09:00";
     if (date) {
       reminderAt = [shiftMoment(date, time, -reminderBefore.minutes)];
       remind = true;
@@ -518,8 +514,6 @@ function createIntent(text: string, now: Date): Intent {
     title: value.slice(0, 200),
     startDate,
     startTime,
-    dueDate,
-    dueTime,
     priority,
     effort,
     tags: tags.length > 0 ? tags : undefined,
@@ -717,8 +711,6 @@ function runCreateClauses(store: TaskStore, clauses: CreateClause[], now: Date):
       title: parsed.title,
       startDate: parsed.startDate,
       startTime: parsed.startTime,
-      dueDate: parsed.dueDate,
-      dueTime: parsed.dueTime,
       priority: parsed.priority,
       effort: parsed.effort,
       tags: parsed.tags,
@@ -778,8 +770,6 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
               title: intent.title,
               startDate: intent.startDate,
               startTime: intent.startTime,
-              dueDate: intent.dueDate,
-              dueTime: intent.dueTime,
               priority: intent.priority,
               effort: intent.effort,
               tags: intent.tags,
@@ -809,7 +799,7 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
       );
     case "update": {
       const patch: TaskPatch = {};
-      if (intent.dueDate) patch.dueDate = intent.dueDate;
+      if (intent.startDate) patch.startDate = intent.startDate;
       if (intent.priority) patch.priority = intent.priority;
       if (intent.effort !== undefined) patch.effort = intent.effort;
       return chatReply(execute(store, { kind: "update", hint: intent.hint, patch }, now), now);

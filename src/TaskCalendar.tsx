@@ -191,7 +191,7 @@ export function TaskCalendar({
                   <span className="day-task-title">{task.title}</span>
                   <span className="day-task-meta">
                     {[
-                      task.dueTime ?? task.startTime ?? "全天",
+                      task.startTime ?? task.dueTime ?? "全天",
                       task.done ? "已完成" : isOverdue(task) ? "已逾期" : "待完成",
                       task.subtasks?.length
                         ? `子任务 ${task.subtasks.filter((item) => item.done).length}/${task.subtasks.length}`

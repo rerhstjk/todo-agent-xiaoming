@@ -103,7 +103,7 @@ function ok(result: CommandResult): { ok: boolean; changed: boolean } {
 function reminderAsk(task: Task): string | undefined {
   if (task.remind === true) return undefined;
   if (!task.startDate && !task.dueDate) return undefined;
-  return `要不要给「${task.title}」设个提醒？默认开始前 30 分钟、截止前 10 分钟，回「要」或「不用」。`;
+  return `要不要给「${task.title}」设个提醒？默认开始前 30 分钟，回「要」或「不用」。`;
 }
 
 function createChat(result: CommandResult, now: Date): string {
@@ -238,11 +238,11 @@ function listText(result: CommandResult, now: Date): string {
   switch (scope) {
     case "today":
       if (selection.length === 0) {
-        return `今天（${formatShortChineseDate(now)}）没有到期的任务。${overdueNote}`;
+        return `今天（${formatShortChineseDate(now)}）没有到点的任务。${overdueNote}`;
       }
       return [
         formatTaskList(selection, {
-          heading: `今天（${formatShortChineseDate(now)}）有 ${selection.length} 项任务到期：`,
+          heading: `今天（${formatShortChineseDate(now)}）有 ${selection.length} 项任务开始：`,
           now,
         }),
         ...(overdue.length > 0 ? [overdueNote] : []),
@@ -251,17 +251,17 @@ function listText(result: CommandResult, now: Date): string {
     case "tomorrow": {
       const tomorrow = addDays(now, 1);
       if (selection.length === 0) {
-        return `明天（${formatShortChineseDate(tomorrow)}）没有到期的任务。${overdueNote}`;
+        return `明天（${formatShortChineseDate(tomorrow)}）没有到点的任务。${overdueNote}`;
       }
       return formatTaskList(selection, {
-        heading: `明天（${formatShortChineseDate(tomorrow)}）有 ${selection.length} 项任务到期：`,
+        heading: `明天（${formatShortChineseDate(tomorrow)}）有 ${selection.length} 项任务开始：`,
         now,
       });
     }
 
     case "week":
       if (selection.length === 0) {
-        return "本周剩下的时间没有到期的任务，可以放松一下。";
+        return "本周剩下的时间没有到点的任务，可以放松一下。";
       }
       return formatTaskList(selection, {
         heading: `本周还有 ${selection.length} 项任务要处理：`,
@@ -385,10 +385,10 @@ function updateChat(result: CommandResult, now: Date): string {
   if (result.status === "invalid") return "这次没有需要修改的字段。";
 
   const patch = result.command.kind === "update" ? result.command.patch : {};
-  if (patch.dueDate) {
-    return `已把「${task.title}」的截止日期改成${relativeDayLabel(patch.dueDate, now)}（${patch.dueDate}）。`;
+  if (patch.startDate) {
+    return `已把「${task.title}」的开始日期改成${relativeDayLabel(patch.startDate, now)}（${patch.startDate}）。`;
   }
-  if (patch.dueDate === null) return `已清除「${task.title}」的截止日期。`;
+  if (patch.startDate === null) return `已清除「${task.title}」的开始日期。`;
   if (patch.priority) {
     return `已把「${task.title}」设为${PRIORITY_LABELS[patch.priority]}。`;
   }

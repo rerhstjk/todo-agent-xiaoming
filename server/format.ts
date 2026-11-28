@@ -1,4 +1,4 @@
-import { dayDiff, deadlineMoment, relativeDayLabel } from "./dates.ts";
+import { dayDiff, relativeDayLabel } from "./dates.ts";
 import { formatEffort } from "./effort.ts";
 import { REPEAT_LABELS } from "./recurrence.ts";
 import {
@@ -21,7 +21,7 @@ export const PRIORITY_LABELS: Record<Priority, string> = {
   low: "低优先级",
 };
 
-/** “○ 买牛奶（截止 明天 · 高优先级）”这样的一行。 */
+/** “○ 买牛奶（开始 明天 · 高优先级）”这样的一行。 */
 export function formatTaskLine(task: Task, now = new Date()): string {
   return `${task.done ? "✓" : "○"} ${task.title}${taskDetails(task, now)}`;
 }
@@ -35,30 +35,19 @@ export function formatTaskBlock(task: Task, now = new Date()): string {
   return [line, ...detail].join("\n");
 }
 
-/** 任务标题后面的补充信息，例如“（截止 明天 · 高优先级 · 子任务 1/2）”。 */
+/** 任务标题后面的补充信息，例如“（开始 明天 · 高优先级 · 子任务 1/2）”。 */
 export function taskDetails(task: Task, now: Date): string {
   const details: string[] = [];
-  const start = taskStartDate(task);
+  // 清单里只有「开始时间」：新任务的时间都写在开始字段上；
+  // 老数据没有开始字段时，用原来的截止字段兜底展示。
+  const start = taskStartDate(task) ?? taskDueDate(task);
   if (start) {
-    const time = taskStartTime(task);
-    details.push(`从${relativeDayLabel(start, now)}${time ? ` ${time} ` : ""}开始`);
-  }
-
-  const due = taskDueDate(task);
-  if (due) {
-    const days = dayDiff(due, now);
-    const label = relativeDayLabel(due, now);
-    const time = taskDueTime(task);
+    const time = taskStartTime(task) ?? taskDueTime(task);
+    const days = dayDiff(start, now);
+    const label = relativeDayLabel(start, now);
     const moment = `${label}${time ? ` ${time}` : ""}`;
-    const overdue =
-      !task.done &&
-      (() => {
-        const deadline = deadlineMoment(due, time);
-        return deadline !== undefined && deadline.getTime() < now.getTime();
-      })();
-    if (overdue) details.push(`截止 ${moment}，已逾期`);
-    else if (days === 0 && !task.done) details.push(time ? `${moment} 到期` : "今天到期");
-    else details.push(`截止 ${moment}`);
+    if (!task.done && days < 0) details.push(`开始 ${moment}，已过时间`);
+    else details.push(`开始 ${moment}`);
   }
 
   const priority = taskPriority(task);

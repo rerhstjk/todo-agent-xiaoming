@@ -39,12 +39,12 @@ export const toolSchemas: ChatCompletionTool[] = [
           },
           dueDate: {
             type: "string",
-            description: "截止日期，格式 YYYY-MM-DD。用户没提到日期就不要传。",
+            description: "开始日期，格式 YYYY-MM-DD。用户没提到日期就不要传。",
           },
           dueTime: {
             type: "string",
             description:
-              "截止时刻，格式 HH:mm（24 小时制），例如 17:00。用户没提到具体时刻就不要传。",
+              "开始时刻，格式 HH:mm（24 小时制），例如 17:00。用户没提到具体时刻就不要传。",
           },
           priority: {
             type: "string",
@@ -109,7 +109,7 @@ export const toolSchemas: ChatCompletionTool[] = [
     function: {
       name: "update_task",
       description:
-        "修改一条已有任务：标记完成/未完成、改标题、改截止日期、改优先级、改工作量、改备注。一次可以修改多个字段。",
+        "修改一条已有任务：标记完成/未完成、改标题、改开始日期、改优先级、改工作量、改备注。一次可以修改多个字段。",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -128,11 +128,11 @@ export const toolSchemas: ChatCompletionTool[] = [
           done: { type: "boolean", description: "true 标记完成，false 重新打开。" },
           dueDate: {
             type: "string",
-            description: "新的截止日期 YYYY-MM-DD；传空字符串表示清除截止日期；不修改就不要传。",
+            description: "新的开始日期 YYYY-MM-DD；传空字符串表示清除开始日期；不修改就不要传。",
           },
           dueTime: {
             type: "string",
-            description: "新的截止时刻 HH:mm；传空字符串表示清除时刻；不修改就不要传。",
+            description: "新的开始时刻 HH:mm；传空字符串表示清除时刻；不修改就不要传。",
           },
           priority: {
             type: "string",
@@ -279,10 +279,10 @@ export function runTool(
             kind: "create",
             input: {
               title: args.title,
-              startDate: normalizeDueDate(args.startDate, now),
-              startTime: normalizeDueTime(args.startTime),
-              dueDate: normalizeDueDate(args.dueDate, now),
-              dueTime: normalizeDueTime(args.dueTime),
+              // 「截止」已经并入「开始」：旧参数 dueDate/dueTime 仍接受，
+              // 但统一落到开始时间，避免同一个时间既算开始又算截止。
+              startDate: normalizeDueDate(args.startDate ?? args.dueDate, now),
+              startTime: normalizeDueTime(args.startTime ?? args.dueTime),
               priority: parsePriority(args.priority) ?? undefined,
               effort: parseEffort(args.effort) ?? undefined,
               note: args.note?.trim() || undefined,
@@ -308,8 +308,10 @@ export function runTool(
 
         if (args.startDate !== undefined) {
           const value = args.startDate.trim();
-          if (!value) patch.startDate = null;
-          else {
+          if (!value) {
+            patch.startDate = null;
+            patch.startTime = null;
+          } else {
             const startDate = normalizeDueDate(value, now);
             if (!startDate) {
               return {
@@ -338,37 +340,38 @@ export function runTool(
           }
         }
 
-        if (args.dueDate !== undefined) {
+        // 模型如果还按旧叫法传 dueDate/dueTime，就落到开始时间上。
+        if (args.dueDate !== undefined && args.startDate === undefined) {
           const value = args.dueDate.trim();
           if (!value) {
-            patch.dueDate = null;
-            patch.dueTime = null;
+            patch.startDate = null;
+            patch.startTime = null;
           } else {
-            const dueDate = normalizeDueDate(value, now);
-            if (!dueDate) {
+            const startDate = normalizeDueDate(value, now);
+            if (!startDate) {
               return {
                 ok: false,
                 changed: false,
                 message: `无法识别日期「${args.dueDate}」，请用 YYYY-MM-DD 格式。`,
               };
             }
-            patch.dueDate = dueDate;
+            patch.startDate = startDate;
           }
         }
 
-        if (args.dueTime !== undefined) {
+        if (args.dueTime !== undefined && args.startTime === undefined) {
           const value = args.dueTime.trim();
-          if (!value) patch.dueTime = null;
+          if (!value) patch.startTime = null;
           else {
-            const dueTime = normalizeDueTime(value);
-            if (!dueTime) {
+            const startTime = normalizeDueTime(value);
+            if (!startTime) {
               return {
                 ok: false,
                 changed: false,
                 message: `无法识别时刻「${args.dueTime}」，请用 HH:mm 格式。`,
               };
             }
-            patch.dueTime = dueTime;
+            patch.startTime = startTime;
           }
         }
 

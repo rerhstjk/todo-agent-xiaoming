@@ -158,9 +158,18 @@ components:
         startDate: { type: string, description: 开始日期，YYYY-MM-DD }
         startTime:
           { type: string, description: 开始时刻，HH:mm（24 小时制），只有 startDate 存在时才有意义 }
-        dueDate: { type: string, description: 截止日期，YYYY-MM-DD }
+        dueDate:
+          {
+            type: string,
+            deprecated: true,
+            description: 兼容旧数据的截止日期；新建任务改用 startDate,
+          }
         dueTime:
-          { type: string, description: 截止时刻，HH:mm（24 小时制），只有 dueDate 存在时才有意义 }
+          {
+            type: string,
+            deprecated: true,
+            description: 兼容旧数据的截止时刻；新建任务改用 startTime,
+          }
         priority: { type: string, enum: [low, normal, high] }
         effort: { type: number, description: 预计用时（小时），例如 0.5、2 }
         repeat:
@@ -174,11 +183,7 @@ components:
           description: 标签，最多 10 个，每个不超过 20 字
           items: { type: string }
         note: { type: string, description: 备注 }
-        remind:
-          {
-            type: boolean,
-            description: 是否打开该任务的提醒（默认提醒：开始前 30 分钟、截止前 10 分钟）,
-          }
+        remind: { type: boolean, description: 是否打开该任务的提醒（默认提醒：开始前 30 分钟） }
         reminderAt:
           type: array
           description: 自定义提醒时刻，本地时间 YYYY-MM-DDTHH:mm，最多 5 个；有自定义时只按自定义提醒
