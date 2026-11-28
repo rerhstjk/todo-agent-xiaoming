@@ -10,7 +10,7 @@ import {
 } from "./format.ts";
 import { formatReminderPlan } from "./reminders.ts";
 import { overdueTasks } from "./selection.ts";
-import { taskEffortHours, type Task } from "./task-store.ts";
+import type { Task } from "./task-store.ts";
 import { toPublicTask } from "./task-view.ts";
 import type { CommandResult } from "./commands.ts";
 
@@ -122,13 +122,8 @@ function createChat(result: CommandResult, now: Date): string {
     );
   } else if (task.remind === true) {
     lines.push(`提醒已经设好：${formatReminderPlan(task)}。`);
-    if (taskEffortHours(task) === undefined) {
-      lines.push(`「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
-    }
   } else if (askReminder) {
     lines.push(askReminder);
-  } else if (taskEffortHours(task) === undefined) {
-    lines.push(`「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
   }
   if (result.duplicate) {
     lines.push(
@@ -182,19 +177,6 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
     }
   } else if (needsReminder.length > 0) {
     lines.push(`要不要给这些任务设提醒？可以说「给开会设提醒」，不需要就回「不用」。`);
-  }
-
-  const missingEffort =
-    missingTime.length === 0 &&
-    !needsReminder.length &&
-    created.length > 0 &&
-    created.every((task) => taskEffortHours(task) === undefined);
-  if (missingEffort) {
-    lines.push(
-      created.length === 1
-        ? `「${created[0]!.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
-        : `这几项大概各要花多久？回「大概 2 小时」这样的说法，我逐条帮你补上。`,
-    );
   }
 
   const addedSubtasks = results.filter(

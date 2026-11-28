@@ -668,19 +668,17 @@ test("模型工具写具体时刻时落到开始时间", async () => {
   assert.equal(store.list()[0]?.startTime, undefined);
 });
 
-test("没提预计用时时会追问，回答小时数后补到任务上", async () => {
+test("没提预计用时时不再追问，只问提醒", async () => {
   const { store, send } = fixture();
 
   const created = await send("记一下明天写周报");
   assert.match(created, /要不要给「写周报」设个提醒/);
+  assert.doesNotMatch(created, /大概要花多久/);
   assert.equal(store.list()[0]?.effort, undefined);
 
   const noReminder = await send("不用");
-  assert.match(noReminder, /「写周报」大概要花多久/);
-
-  const updated = await send("大概 1.5 小时");
-  assert.match(updated, /预计用时设为 1\.5 小时/);
-  assert.equal(store.list()[0]?.effort, 1.5);
+  assert.doesNotMatch(noReminder, /大概要花多久/);
+  assert.equal(store.list()[0]?.effort, undefined);
 });
 
 test("创建时说的“预计半小时”记成 0.5 小时，且不留在标题里", async () => {

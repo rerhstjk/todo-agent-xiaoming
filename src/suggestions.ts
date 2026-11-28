@@ -30,17 +30,10 @@ export function quickRepliesFor(text: string): Suggestion[] {
       { label: "暂不设置", text: "暂不设置" },
     ];
   }
-  if (/要不要给「.+?」设个提醒/.test(text)) {
+  if (/要不要给.{0,20}设个?提醒/.test(text)) {
     return [
       { label: "要", text: "要" },
       { label: "不用", text: "不用" },
-    ];
-  }
-  if (/大概要花多久/.test(text)) {
-    return [
-      { label: "半小时", text: "大概半小时" },
-      { label: "1 小时", text: "大概 1 小时" },
-      { label: "2 小时", text: "大概 2 小时" },
     ];
   }
   return [];

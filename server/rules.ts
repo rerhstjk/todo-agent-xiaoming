@@ -24,7 +24,6 @@ import type { Repeat } from "./recurrence.ts";
 import { formatReminderPlan } from "./reminders.ts";
 import {
   normalizeTags,
-  taskEffortHours,
   taskStartDate,
   type Priority,
   type Task,
@@ -939,14 +938,7 @@ function scheduleFollowUp(
   const askedTitle = /「(.+?)」还没有安排时间/.exec(previous)?.[1];
 
   if (/^(?:暂不设置|先不设置|不设置|不用设置|不用了|跳过|算了)[吧了啊呀!！。]?$/.test(text)) {
-    const title = askedTitle ?? contextTask(store, messages);
-    const task = title
-      ? store.list().find((item) => item.title === title && !item.done)
-      : undefined;
-    const base = "好，先不安排时间。以后想补可以说「拿快递 明天下午 3 点」。";
-    return task && taskEffortHours(task) === undefined
-      ? `${base}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
-      : base;
+    return "好，先不安排时间。以后想补可以说「拿快递 明天下午 3 点」。";
   }
 
   // 「今天有哪些任务到期？」是在提问，不能当成时间回答。
@@ -982,9 +974,6 @@ function scheduleFollowUp(
   if (task.remind !== true && task.startDate) {
     return `${reply}\n要不要给「${task.title}」设个提醒？默认开始前 30 分钟，回「要」或「不用」。`;
   }
-  if (taskEffortHours(task) === undefined) {
-    return `${reply}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`;
-  }
   return reply;
 }
 
@@ -1003,16 +992,10 @@ function reminderFollowUp(store: TaskStore, messages: ChatMessage[]): string | u
       return `「${task.title}」还没有开始或截止时间；先说个时间，我就能帮你设提醒。`;
     }
     const updated = store.update(task.id, { remind: true }) ?? task;
-    const opened = `好，已给「${task.title}」打开提醒：${formatReminderPlan(updated)}。`;
-    return taskEffortHours(updated) === undefined
-      ? `${opened}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
-      : opened;
+    return `好，已给「${task.title}」打开提醒：${formatReminderPlan(updated)}。`;
   }
   if (/^(?:不用|不要|不需要|不用了|算了|免了|不了)[吧了啊呀!！。]?$/.test(text)) {
-    const skipped = "好，这项不设提醒。";
-    return taskEffortHours(task) === undefined
-      ? `${skipped}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
-      : skipped;
+    return "好，这项不设提醒。";
   }
   return undefined;
 }
