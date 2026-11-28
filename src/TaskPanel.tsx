@@ -450,14 +450,19 @@ export function TaskPanel({
               title="编辑"
               onClick={() => beginEdit(task)}
             >
-              ✎
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M4 20h4l10-10-4-4L4 16v4Z" />
+                <path d="m14.5 5.5 4 4" />
+              </svg>
             </button>
             <button
               className="delete"
               aria-label={`删除「${task.title}」`}
               onClick={() => onDelete(task)}
             >
-              ×
+              <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
             </button>
           </span>
         </div>
