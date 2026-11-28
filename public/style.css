@@ -612,14 +612,16 @@ textarea {
   position: sticky;
   top: 0;
   z-index: 1;
-  margin: 0 12px;
-  padding: 6px 15px;
+  min-height: 0;
+  margin: 0 12px 4px;
+  padding: 7px 15px 6px;
   border: 0;
   border-bottom: 1px solid #e8ebf2;
   border-radius: 0;
   background: white;
   box-shadow: none;
   font-size: 12.5px;
+  line-height: 1.4;
   color: #8b95a8;
 }
 .panel-row-head span:first-child {
