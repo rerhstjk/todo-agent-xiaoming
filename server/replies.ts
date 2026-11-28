@@ -115,12 +115,20 @@ function createChat(result: CommandResult, now: Date): string {
     pendingLine(result.tasks, task),
   ];
   const askReminder = reminderAsk(task);
-  if (task.remind === true) {
+  if (!task.startDate && !task.dueDate) {
+    // 先补时间，再问提醒和用时：一次只问一件事，用户更容易回答。
+    lines.push(
+      `「${task.title}」还没有安排时间。什么时候要做？回「今天」「明天下午 3 点」，或者「暂不设置」。`,
+    );
+  } else if (task.remind === true) {
     lines.push(`提醒已经设好：${formatReminderPlan(task)}。`);
+    if (taskEffortHours(task) === undefined) {
+      lines.push(`「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
+    }
   } else if (askReminder) {
     lines.push(askReminder);
   } else if (taskEffortHours(task) === undefined) {
-    lines.push(`这项大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
+    lines.push(`「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`);
   }
   if (result.duplicate) {
     lines.push(
@@ -162,19 +170,27 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
     );
   }
 
+  const missingTime = created.filter((task) => !task.startDate && !task.dueDate);
   const needsReminder = created.filter((task) => reminderAsk(task) !== undefined);
-  if (needsReminder.length > 0) {
+  if (missingTime.length > 0) {
+    lines.push(
+      missingTime.length === 1
+        ? `「${missingTime[0]!.title}」还没有安排时间。什么时候要做？回「今天」「明天下午 3 点」，或者「暂不设置」。`
+        : `还有 ${missingTime.length} 条任务没有安排时间，可以说「开会 明天下午 3 点」逐条补上。`,
+    );
+  } else if (needsReminder.length > 0) {
     lines.push(`要不要给这些任务设提醒？可以说「给开会设提醒」，不需要就回「不用」。`);
   }
 
   const missingEffort =
+    missingTime.length === 0 &&
     !needsReminder.length &&
     created.length > 0 &&
     created.every((task) => taskEffortHours(task) === undefined);
   if (missingEffort) {
     lines.push(
       created.length === 1
-        ? `这项大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
+        ? `「${created[0]!.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
         : `这几项大概各要花多久？回「大概 2 小时」这样的说法，我逐条帮你补上。`,
     );
   }
@@ -386,6 +402,9 @@ function updateChat(result: CommandResult, now: Date): string {
 
   const patch = result.command.kind === "update" ? result.command.patch : {};
   if (patch.startDate) {
+    if (patch.startTime && task.startDate) {
+      return `已把「${task.title}」安排在${relativeDayLabel(task.startDate, now)} ${task.startTime}。`;
+    }
     return `已把「${task.title}」的开始日期改成${relativeDayLabel(patch.startDate, now)}（${patch.startDate}）。`;
   }
   if (patch.startDate === null) return `已清除「${task.title}」的开始日期。`;

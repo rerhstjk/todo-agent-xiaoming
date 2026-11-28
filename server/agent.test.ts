@@ -671,9 +671,12 @@ test("模型工具写具体时刻时落到开始时间", async () => {
 test("没提预计用时时会追问，回答小时数后补到任务上", async () => {
   const { store, send } = fixture();
 
-  const created = await send("记一下写周报");
-  assert.match(created, /这项大概要花多久/);
+  const created = await send("记一下明天写周报");
+  assert.match(created, /要不要给「写周报」设个提醒/);
   assert.equal(store.list()[0]?.effort, undefined);
+
+  const noReminder = await send("不用");
+  assert.match(noReminder, /「写周报」大概要花多久/);
 
   const updated = await send("大概 1.5 小时");
   assert.match(updated, /预计用时设为 1\.5 小时/);
@@ -970,4 +973,33 @@ test("工具只传 reminderAt 时也会打开提醒，并出现在任务数据�
   const publicTask = toPublicTask(task!);
   assert.equal(publicTask.remind, true);
   assert.deepEqual(publicTask.reminderAt, ["2026-11-28T15:21"]);
+});
+
+test("新建任务没时间时先问什么时候做，并把简短回答补成开始时间", async () => {
+  const { store, send } = fixture();
+
+  const created = await send("记一下拿快递");
+  assert.match(created, /什么时候要做/);
+  assert.match(created, /暂不设置/);
+  assert.doesNotMatch(created, /大概要花多久/);
+
+  const scheduled = await send("明天下午三点");
+  assert.match(scheduled, /安排在明天 15:00/);
+  const task = store.list()[0];
+  assert.equal(task?.startDate, "2026-11-27");
+  assert.equal(task?.startTime, "15:00");
+});
+
+test("回答暂不设置时保留无时间任务，提问也不会被误当成时间", async () => {
+  const { store, send } = fixture();
+
+  await send("记一下拿快递");
+  const skipped = await send("暂不设置");
+  assert.match(skipped, /先不安排时间/);
+  assert.equal(store.list()[0]?.startDate, undefined);
+
+  await send("记一下买牛奶");
+  const listed = await send("今天有哪些任务到期？");
+  assert.match(listed, /今天/);
+  assert.equal(store.list().find((task) => task.title === "买牛奶")?.startDate, undefined);
 });

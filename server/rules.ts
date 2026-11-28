@@ -22,7 +22,13 @@ import type { TaskScope } from "./selection.ts";
 import { findEffortHours, parseDurationAnswer } from "./effort.ts";
 import type { Repeat } from "./recurrence.ts";
 import { formatReminderPlan } from "./reminders.ts";
-import { normalizeTags, type Priority, type TaskPatch, type TaskStore } from "./task-store.ts";
+import {
+  normalizeTags,
+  taskEffortHours,
+  type Priority,
+  type TaskPatch,
+  type TaskStore,
+} from "./task-store.ts";
 
 /**
  * 没配置 DEEPSEEK_API_KEY 时使用的规则引擎。它覆盖了题目验收对话里出现的说法，
@@ -747,6 +753,9 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
   const answered = reminderFollowUp(store, messages);
   if (answered) return answered;
 
+  const scheduled = scheduleFollowUp(store, messages, now);
+  if (scheduled) return scheduled;
+
   const text = messages.at(-1)?.content ?? "";
 
   // 先看是不是一句话里说了几件事。必须在 parseIntent 之前判断：
@@ -872,6 +881,65 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
 }
 
 /** 上一条回复问过「要不要设提醒」时，处理用户回的「要 / 不用」。 */
+/** 上一条回复问「什么时候要做」时，把「今天 / 明天下午三点 / 暂不设置」这类简短回答补成开始时间。 */
+function scheduleFollowUp(
+  store: TaskStore,
+  messages: ChatMessage[],
+  now: Date,
+): string | undefined {
+  const previous =
+    [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
+  if (!/什么时候要做|什么时候完成|还没(?:有)?安排时间/.test(previous)) return undefined;
+
+  const text = messages.at(-1)?.content.trim() ?? "";
+  if (!text) return undefined;
+
+  if (/^(?:暂不设置|先不设置|不设置|不用设置|不用了|跳过|算了)[吧了啊呀!！。]?$/.test(text)) {
+    const title = contextTask(store, messages);
+    const task = title
+      ? store.list().find((item) => item.title === title && !item.done)
+      : undefined;
+    const base = "好，先不安排时间。以后想补可以说「拿快递 明天下午 3 点」。";
+    return task && taskEffortHours(task) === undefined
+      ? `${base}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
+      : base;
+  }
+
+  // 「今天有哪些任务到期？」是在提问，不能当成时间回答。
+  if (LIST_WORDS.test(text) || CREATE_WORDS.test(text) || QUERY_WORDS.test(text)) return undefined;
+
+  const title = contextTask(store, messages);
+  if (!title) return undefined;
+
+  const date = findDateText(text, now);
+  const clock = findClockTime(text);
+  if (!date && !clock) return undefined;
+
+  const patch: TaskPatch = {};
+  if (date) patch.startDate = date.value;
+  if (clock) {
+    patch.startTime = clock.value;
+    if (!date) {
+      const tomorrow = toDateString(addDays(startOfDay(now), 1));
+      if (clock.day === "tomorrow") patch.startDate = tomorrow;
+      else if (clock.day === "today") patch.startDate = toDateString(now);
+      else patch.startDate = clock.value > toClockString(now) ? toDateString(now) : tomorrow;
+    }
+  }
+
+  const result = execute(store, { kind: "update", hint: title, patch }, now);
+  const reply = chatReply(result, now);
+  const task = result.task;
+  if (!task) return reply;
+  if (task.remind !== true && task.startDate) {
+    return `${reply}\n要不要给「${task.title}」设个提醒？默认开始前 30 分钟，回「要」或「不用」。`;
+  }
+  if (taskEffortHours(task) === undefined) {
+    return `${reply}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`;
+  }
+  return reply;
+}
+
 function reminderFollowUp(store: TaskStore, messages: ChatMessage[]): string | undefined {
   const previous =
     [...messages].reverse().find((message) => message.role === "assistant")?.content ?? "";
@@ -887,10 +955,16 @@ function reminderFollowUp(store: TaskStore, messages: ChatMessage[]): string | u
       return `「${task.title}」还没有开始或截止时间；先说个时间，我就能帮你设提醒。`;
     }
     const updated = store.update(task.id, { remind: true }) ?? task;
-    return `好，已给「${task.title}」打开提醒：${formatReminderPlan(updated)}。`;
+    const opened = `好，已给「${task.title}」打开提醒：${formatReminderPlan(updated)}。`;
+    return taskEffortHours(updated) === undefined
+      ? `${opened}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
+      : opened;
   }
   if (/^(?:不用|不要|不需要|不用了|算了|免了|不了)[吧了啊呀!！。]?$/.test(text)) {
-    return "好，这项不设提醒。";
+    const skipped = "好，这项不设提醒。";
+    return taskEffortHours(task) === undefined
+      ? `${skipped}\n「${task.title}」大概要花多久？回「大概 2 小时」，我就帮你记进工作量。`
+      : skipped;
   }
   return undefined;
 }

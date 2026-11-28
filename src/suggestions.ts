@@ -18,4 +18,32 @@ export const suggestions: Suggestion[] = [
   { label: "定时任务", text: "提醒我每天下午 6 点写日报" },
 ];
 
+/**
+ * 根据小明上一条回复，给出可直接点的快捷回答。
+ * 例如刚问「什么时候要做？」时，出现今天 / 明天 / 暂不设置。
+ */
+export function quickRepliesFor(text: string): Suggestion[] {
+  if (/什么时候要做|什么时候完成|还没(?:有)?安排时间/.test(text)) {
+    return [
+      { label: "今天", text: "今天" },
+      { label: "明天下午三点", text: "明天下午三点" },
+      { label: "暂不设置", text: "暂不设置" },
+    ];
+  }
+  if (/要不要给「.+?」设个提醒/.test(text)) {
+    return [
+      { label: "要", text: "要" },
+      { label: "不用", text: "不用" },
+    ];
+  }
+  if (/大概要花多久/.test(text)) {
+    return [
+      { label: "半小时", text: "大概半小时" },
+      { label: "1 小时", text: "大概 1 小时" },
+      { label: "2 小时", text: "大概 2 小时" },
+    ];
+  }
+  return [];
+}
+
 /** 欢迎页用前几条即可，避免一屏塞太满。 */

@@ -27,7 +27,7 @@ import {
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
-import { suggestions } from "./suggestions.ts";
+import { quickRepliesFor, suggestions } from "./suggestions.ts";
 import { useSpeechInput } from "./use-speech.ts";
 import {
   reminderPermission,
@@ -441,6 +441,10 @@ export default function App() {
     startSpeech();
   }
 
+  const lastMessage = messages.at(-1);
+  const quickReplies =
+    lastMessage?.role === "assistant" ? quickRepliesFor(lastMessage.content) : [];
+
   return (
     <div className="app">
       <header>
@@ -456,6 +460,23 @@ export default function App() {
             onEditMessage={(index, text) => void editMessage(index, text)}
           />
           <div className="compose">
+            {quickReplies.length > 0 && (
+              <div className="suggestions quick-suggestions" aria-label="快捷回复">
+                <span className="quick-label">快捷回复</span>
+                {quickReplies.map((item) => (
+                  <button
+                    key={item.text}
+                    type="button"
+                    className="suggestion quick"
+                    title={`${item.text}（点一下填进输入框）`}
+                    disabled={pending}
+                    onClick={() => chooseSuggestion(item.text)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="suggestions" aria-label="预设提示词">
               {suggestions.map((item) => (
                 <button
