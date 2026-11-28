@@ -231,28 +231,35 @@ textarea {
 }
 .mic {
   flex: none;
+  display: inline-grid;
+  place-items: center;
   width: 42px;
   height: 42px;
-  border-radius: 12px;
-  border: 1px solid #dce1ec;
-  background: white;
-  font-size: 17px;
-  color: #515c71;
+  border-radius: 50%;
+  border: 0;
+  background: #1643e7;
+  color: white;
   padding: 0;
 }
 .mic:hover {
-  border-color: #526ed8;
+  background: #0f35c4;
+}
+.mic:disabled {
+  opacity: 0.55;
+}
+.mic-icon {
+  display: block;
+  width: 20px;
+  height: 20px;
 }
 .mic.listening {
-  background: #fee4e2;
-  border-color: #e2a19a;
-  color: #b03a2c;
+  background: #d94a3d;
   animation: mic-pulse 1.4s infinite;
 }
 @keyframes mic-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 #e2a19a66;
+    box-shadow: 0 0 0 0 #e2a19a80;
   }
   50% {
     box-shadow: 0 0 0 7px #e2a19a00;

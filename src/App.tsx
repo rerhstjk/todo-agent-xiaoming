@@ -422,7 +422,24 @@ export default function App() {
                   disabled={pending}
                   onClick={toggleSpeech}
                 >
-                  {listening ? "●" : "🎤"}
+                  <svg
+                    className="mic-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                    focusable="false"
+                  >
+                    <path
+                      d="M12 3.5a3 3 0 0 0-3 3v5.5a3 3 0 0 0 6 0V6.5a3 3 0 0 0-3-3Z"
+                      fill="currentColor"
+                    />
+                    <path
+                      d="M6.5 11.5a5.5 5.5 0 0 0 11 0M12 17v3.5"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                    />
+                  </svg>
                 </button>
               )}
               <button className="send" disabled={pending || !draft.trim()} aria-label="发送消息">
