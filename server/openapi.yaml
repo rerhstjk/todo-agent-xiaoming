@@ -37,6 +37,80 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Task" }
         "400": { $ref: "#/components/responses/BadRequest" }
+  /api/push/config:
+    get:
+      operationId: getPushConfig
+      summary: 获取 Web Push 配置
+      responses:
+        "200":
+          description: VAPID 公钥与当前订阅数
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [publicKey, subscriptions]
+                properties:
+                  publicKey: { type: string }
+                  subscriptions: { type: integer }
+        "503":
+          description: 未启用 Web Push
+  /api/push/subscribe:
+    post:
+      operationId: subscribePush
+      summary: 保存浏览器的推送订阅
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              additionalProperties: false
+              properties:
+                endpoint: { type: string }
+                keys:
+                  type: object
+                  required: [p256dh, auth]
+                  properties:
+                    p256dh: { type: string }
+                    auth: { type: string }
+      responses:
+        "201":
+          description: 订阅已保存
+  /api/push/unsubscribe:
+    post:
+      operationId: unsubscribePush
+      summary: 删除浏览器的推送订阅
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint]
+              additionalProperties: false
+              properties:
+                endpoint: { type: string }
+      responses:
+        "200":
+          description: 删除结果
+  /api/push/test:
+    post:
+      operationId: testPush
+      summary: 给所有订阅发送一条测试通知
+      responses:
+        "201":
+          description: 发送结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sent, failed]
+                properties:
+                  sent: { type: integer }
+                  failed: { type: integer }
+        "404":
+          description: 还没有订阅
   /api/tasks/undo:
     post:
       operationId: undoDeleteTask
