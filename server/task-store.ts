@@ -89,6 +89,10 @@ export interface TaskStore {
   remove(id: string): boolean;
   /** 撤销最近一次删除；内存里只保留最近 20 条，重启后清空。 */
   restoreLast?(): Task | undefined;
+  /** 对话编辑回滚：整份清单快照（深拷贝）。 */
+  snapshotAll?(): Task[];
+  /** 用快照覆盖整份清单并落盘。 */
+  restoreAll?(tasks: Task[]): void;
 }
 
 export function isDateString(value: unknown): value is string {
@@ -249,6 +253,14 @@ export function createJsonTaskStore(filename: string): TaskStore {
 
       save(tasks);
       return task;
+    },
+
+    snapshotAll() {
+      return structuredClone(list());
+    },
+
+    restoreAll(tasks) {
+      save(taskList.parse(tasks) as Task[]);
     },
 
     remove(id) {

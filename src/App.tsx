@@ -8,8 +8,12 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
+
+/** 前端多带一个快照 id：编辑这条消息时用来回滚清单。 */
+type UiMessage = ChatMessage & { snapshotId?: string };
 import {
   requestReply,
+  restoreSnapshot,
   fetchTasks,
   setTaskDone,
   updateSubtasks,
@@ -35,7 +39,7 @@ function isSendShortcut(event: KeyboardEvent<HTMLTextAreaElement>) {
 }
 
 export default function App() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<UiMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
@@ -176,18 +180,23 @@ export default function App() {
     window.addEventListener("pointerup", stop, { once: true });
   }
 
-  async function runTurn(base: ChatMessage[], text: string) {
+  async function runTurn(base: UiMessage[], text: string) {
     const content = text.trim();
     if (!content) return;
     if (listening) stopSpeech();
     setSpeechError("");
-    const outgoing: ChatMessage[] = [...base, { role: "user", content }];
+    const outgoing: UiMessage[] = [...base, { role: "user", content }];
     setMessages(outgoing);
     setPending(true);
     setError("");
     try {
-      const answer = await requestReply(outgoing);
-      setMessages([...outgoing, { role: "assistant", content: answer }]);
+      const { reply: answer, snapshotId } = await requestReply(
+        outgoing.map(({ role, content: text }) => ({ role, content: text })),
+      );
+      const withSnapshot = outgoing.map((message, position) =>
+        position === outgoing.length - 1 ? { ...message, snapshotId } : message,
+      );
+      setMessages([...withSnapshot, { role: "assistant", content: answer }]);
       // 对话可能增删了任务，回复后同步一次侧边清单。
       void refreshTasks();
     } catch (cause) {
@@ -208,9 +217,27 @@ export default function App() {
     await runTurn(messages, content);
   }
 
-  // 编辑历史里的一条用户消息：截断它之后的内容，重新请求回复。
+  // 编辑历史里的一条用户消息：先回滚这条消息发送前的清单，再截断重发。
   async function editMessage(index: number, text: string) {
     if (pending) return;
+    const target = messages[index];
+    if (!target || target.role !== "user") return;
+    if (!target.snapshotId) {
+      notifyAgent("这条消息没有可回滚的清单快照，本次只重放对话，清单不会回滚。");
+    } else {
+      try {
+        const result = await restoreSnapshot(target.snapshotId);
+        void refreshTasks();
+        notifyAgent(`已回滚清单到这条消息发送前（${result.count} 项任务）。`);
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? `无法回滚清单：${cause.message}`
+            : "无法回滚清单，请刷新页面后重试。",
+        );
+        return;
+      }
+    }
     await runTurn(messages.slice(0, index), text);
   }
 

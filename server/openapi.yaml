@@ -69,6 +69,33 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/Error" }
+  /api/snapshots/{id}/restore:
+    post:
+      operationId: restoreTaskSnapshot
+      summary: 把任务清单回滚到某轮对话开始前的状态
+      description: 聊天接口在每轮回复前通过 X-Task-Snapshot 响应头返回快照 id；快照只存在服务进程内存里。
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 已回滚，返回回滚后的任务数量
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [restored, count]
+                properties:
+                  restored: { type: boolean }
+                  count: { type: integer, minimum: 0 }
+        "404":
+          description: 快照不存在或已经过期
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
   /api/tasks/{id}:
     parameters:
       - name: id

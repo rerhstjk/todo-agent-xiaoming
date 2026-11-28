@@ -29,19 +29,23 @@ async function startTestApp(t: TestContext) {
   await once(server, "listening");
   const { port } = server.address() as AddressInfo;
 
-  async function request(method: string, path: string, body?: unknown) {
-    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+  async function raw(method: string, path: string, body?: unknown) {
+    return fetch(`http://127.0.0.1:${port}${path}`, {
       method,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
+  }
+
+  async function request(method: string, path: string, body?: unknown) {
+    const response = await raw(method, path, body);
     return {
       status: response.status,
       body: response.status === 204 ? null : await response.json(),
     };
   }
 
-  return { request, conversations, filename, store };
+  return { request, raw, conversations, filename, store };
 }
 
 test("任务 API 可以创建、列出、修改和删除任务", async (t) => {
@@ -225,4 +229,31 @@ test("在面板上标记完成重复任务时，也会自动生成下一次", as
   // 重复点完成不会无限生成。
   await request("PATCH", `/api/tasks/${task.id}`, { done: true });
   assert.equal((await store.list()).length, 2);
+});
+
+test("编辑对话时可以回滚到那一轮对话之前的清单", async (t) => {
+  const { request, raw } = await startTestApp(t);
+
+  // 聊天接口在开始处理之前拍下快照，并通过响应头告诉前端。
+  const chat = await raw("POST", "/api/chat", {
+    messages: [{ role: "user", content: "帮我记一下买牛奶" }],
+  });
+  const snapshotId = chat.headers.get("x-task-snapshot");
+  assert.ok(snapshotId);
+
+  // 这一轮后续又改了清单，编辑历史消息时应该整体回滚。
+  await request("POST", "/api/tasks", { title: "买牛奶" });
+  await request("POST", "/api/tasks", { title: "取快递" });
+  assert.equal((await request("GET", "/api/tasks")).body.length, 2);
+
+  assert.deepEqual(await request("POST", `/api/snapshots/${snapshotId}/restore`), {
+    status: 200,
+    body: { restored: true, count: 0 },
+  });
+  assert.deepEqual((await request("GET", "/api/tasks")).body, []);
+
+  assert.deepEqual(await request("POST", "/api/snapshots/missing/restore"), {
+    status: 404,
+    body: { error: "找不到这个对话快照，可能已经过期。" },
+  });
 });

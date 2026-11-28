@@ -19,7 +19,13 @@ export type ApiTask = {
 
 const REPLY_TIMEOUT_MS = 60_000;
 
-export async function requestReply(messages: ChatMessage[]): Promise<string> {
+export type ReplyResult = {
+  reply: string;
+  /** 服务端在这轮对话开始前拍下的清单快照，用于编辑历史消息时回滚。 */
+  snapshotId?: string;
+};
+
+export async function requestReply(messages: ChatMessage[]): Promise<ReplyResult> {
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), REPLY_TIMEOUT_MS);
   let response: Response;
@@ -40,7 +46,10 @@ export async function requestReply(messages: ChatMessage[]): Promise<string> {
   }
   const body: unknown = await response.json().catch(() => null);
   if (typeof body === "object" && body !== null) {
-    if (response.ok && "reply" in body && typeof body.reply === "string") return body.reply;
+    if (response.ok && "reply" in body && typeof body.reply === "string") {
+      const snapshotId = response.headers.get("X-Task-Snapshot") ?? undefined;
+      return { reply: body.reply, snapshotId };
+    }
     if ("error" in body && typeof body.error === "string") throw new Error(body.error);
   }
   throw new Error("服务暂时不可用。");
@@ -90,6 +99,14 @@ export function updateSubtasks(
 
 export function deleteTask(id: string): Promise<void> {
   return request<void>(`/api/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** 把清单恢复到某轮对话开始前的状态。 */
+export function restoreSnapshot(id: string): Promise<{ restored: boolean; count: number }> {
+  return request<{ restored: boolean; count: number }>(
+    `/api/snapshots/${encodeURIComponent(id)}/restore`,
+    { method: "POST" },
+  );
 }
 
 /** 撤销删除；count 用于批量删除后一次恢复多条。 */
