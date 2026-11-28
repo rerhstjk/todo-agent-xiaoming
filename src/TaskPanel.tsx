@@ -340,9 +340,6 @@ export function TaskPanel({
             </button>
             <div className="task-body">
               <div className="task-main">
-                {urgent.label && (
-                  <span className={`urgency-dot urgency-${urgent.level}`} title={urgent.label} />
-                )}
                 <button
                   type="button"
                   className="task-title-button"

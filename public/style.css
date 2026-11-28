@@ -664,25 +664,6 @@ textarea {
   color: #98a2b3;
   text-decoration: line-through;
 }
-.urgency-dot {
-  width: 7px;
-  height: 6px;
-  border-radius: 50%;
-  flex: none;
-  align-self: center;
-}
-.urgency-dot.urgency-overdue {
-  background: #d64545;
-}
-.urgency-dot.urgency-now {
-  background: #e8722a;
-}
-.urgency-dot.urgency-soon {
-  background: #e8a13a;
-}
-.urgency-dot.urgency-today {
-  background: #3d7bea;
-}
 .urgency-text {
   font-size: 11px;
   color: #8b95a8;
