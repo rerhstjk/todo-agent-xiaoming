@@ -1,5 +1,12 @@
 import { addDays, deadlineMoment, startOfDay, toDateString } from "./dates.ts";
-import { taskDueDate, taskDueTime, type Task } from "./task-store.ts";
+import {
+  taskDueDate,
+  taskDueTime,
+  taskPriority,
+  taskStartDate,
+  taskStartTime,
+  type Task,
+} from "./task-store.ts";
 
 /**
  * 清单的“查看范围”。规则引擎和模型工具都只表达这个枚举，
@@ -22,13 +29,41 @@ export function isTaskScope(value: unknown): value is TaskScope {
 }
 
 /** 有截止时间的排在前面：先按日期，再按当天时刻，没有日期的排在最后。 */
+const PRIORITY_ORDER: Record<string, number> = { high: 0, normal: 1, low: 2 };
+
+function priorityWeight(task: Task): number {
+  return PRIORITY_ORDER[taskPriority(task) ?? "normal"] ?? 1;
+}
+
+/**
+ * 默认排序：先按开始时间，早的在前；没有开始时间时用截止时刻顶替。
+ * 时间相同、或两边都没有时间时，高优先级在前。
+ */
 export function sortByDue(tasks: Task[]): Task[] {
   return [...tasks].sort((a, b) => {
-    const leftDate = taskDueDate(a) ?? "9999-99-99";
-    const rightDate = taskDueDate(b) ?? "9999-99-99";
-    if (leftDate !== rightDate) return leftDate.localeCompare(rightDate);
-    return (taskDueTime(a) ?? "23:59").localeCompare(taskDueTime(b) ?? "23:59");
+    const left = startMoment(a) ?? dueMoment(a);
+    const right = startMoment(b) ?? dueMoment(b);
+    if (left !== right) {
+      if (left === undefined) return 1;
+      if (right === undefined) return -1;
+      return left < right ? -1 : 1;
+    }
+    return priorityWeight(a) - priorityWeight(b);
   });
+}
+
+/** 开始时刻，没有开始日期时返回 undefined（同一天默认 09:00）。 */
+function startMoment(task: Task): number | undefined {
+  const date = taskStartDate(task);
+  if (!date) return undefined;
+  return deadlineMoment(date, taskStartTime(task) ?? "09:00")?.getTime();
+}
+
+/** 截止时刻，没有截止日期时返回 undefined（同一天默认 23:59）。 */
+function dueMoment(task: Task): number | undefined {
+  const date = taskDueDate(task);
+  if (!date) return undefined;
+  return deadlineMoment(date, taskDueTime(task))?.getTime();
 }
 
 /** 已经超过截止时刻的未完成任务；无时刻的按当天 23:59 算。 */

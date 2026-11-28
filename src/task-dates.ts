@@ -152,24 +152,21 @@ export function startText(task: ApiTask): string {
   return task.startTime ?? "—";
 }
 
+/**
+ * 默认排序：先按开始时间，早的在前；没有开始时间时用截止时刻顶替。
+ * 时间相同、或两边都没有时间时，高优先级在前。
+ */
 export function compareTasks(a: ApiTask, b: ApiTask): number {
   const weight: Record<string, number> = { high: 0, normal: 1, low: 2 };
-  const dateA = a.dueDate ?? a.startDate;
-  const dateB = b.dueDate ?? b.startDate;
-  if (dateA !== dateB) {
-    if (!dateA) return 1;
-    if (!dateB) return -1;
-    return dateA < dateB ? -1 : 1;
-  }
-  const timeA = a.dueTime ?? a.startTime;
-  const timeB = b.dueTime ?? b.startTime;
-  if ((timeA ?? "") !== (timeB ?? "")) {
-    return (timeA ?? "23:59") < (timeB ?? "23:59") ? -1 : 1;
-  }
-  if (a.priority !== b.priority) {
-    return (weight[a.priority ?? "normal"] ?? 1) - (weight[b.priority ?? "normal"] ?? 1);
-  }
-  return 0;
+  const priority = (task: ApiTask) => weight[task.priority ?? "normal"] ?? 1;
+  const moment = (task: ApiTask) => startMoment(task) ?? deadline(task);
+
+  const left = moment(a);
+  const right = moment(b);
+  if (left !== undefined && right !== undefined && left !== right) return left - right;
+  if (left !== undefined && right === undefined) return -1;
+  if (left === undefined && right !== undefined) return 1;
+  return priority(a) - priority(b);
 }
 
 export type DueBucket = "overdue" | "today" | "tomorrow" | "week" | "more";
