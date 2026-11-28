@@ -176,14 +176,13 @@ export default function App() {
     window.addEventListener("pointerup", stop, { once: true });
   }
 
-  async function send(text: string) {
+  async function runTurn(base: ChatMessage[], text: string) {
     const content = text.trim();
-    if (!content || pending) return;
+    if (!content) return;
     if (listening) stopSpeech();
     setSpeechError("");
-    const outgoing: ChatMessage[] = [...messages, { role: "user", content }];
+    const outgoing: ChatMessage[] = [...base, { role: "user", content }];
     setMessages(outgoing);
-    setDraft("");
     setPending(true);
     setError("");
     try {
@@ -192,13 +191,27 @@ export default function App() {
       // 对话可能增删了任务，回复后同步一次侧边清单。
       void refreshTasks();
     } catch (cause) {
-      setMessages(messages);
+      setMessages(base);
       setDraft(text);
       setError(cause instanceof Error ? `发送失败：${cause.message}` : "发送失败，请重试。");
     } finally {
       setPending(false);
       requestAnimationFrame(() => input.current?.focus());
     }
+  }
+
+  async function send(text: string) {
+    if (pending) return;
+    const content = text.trim();
+    if (!content) return;
+    setDraft("");
+    await runTurn(messages, content);
+  }
+
+  // 编辑历史里的一条用户消息：截断它之后的内容，重新请求回复。
+  async function editMessage(index: number, text: string) {
+    if (pending) return;
+    await runTurn(messages.slice(0, index), text);
   }
 
   async function toggleTask(task: ApiTask) {
@@ -314,7 +327,11 @@ export default function App() {
       </header>
       <main style={{ "--panel-width": `${panelWidth}px` } as CSSProperties}>
         <section className="chat">
-          <ChatHistory messages={messages} pending={pending} />
+          <ChatHistory
+            messages={messages}
+            pending={pending}
+            onEditMessage={(index, text) => void editMessage(index, text)}
+          />
           <div className="compose">
             <div className="suggestions" aria-label="预设提示词">
               {suggestions.map((item) => (
