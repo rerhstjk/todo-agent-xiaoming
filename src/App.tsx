@@ -25,7 +25,7 @@ import {
 } from "./chat-client.ts";
 import { ChatHistory } from "./ChatHistory.tsx";
 import { TaskPanel } from "./TaskPanel.tsx";
-import { quickRepliesFor, suggestions } from "./suggestions.ts";
+import { suggestions } from "./suggestions.ts";
 import { useSpeechInput } from "./use-speech.ts";
 import {
   reminderPermission,
@@ -341,6 +341,19 @@ export default function App() {
     }
   }
 
+  async function addSubtask(task: ApiTask, title: string) {
+    const subtasks = [...(task.subtasks ?? []), { id: crypto.randomUUID(), title, done: false }];
+    try {
+      await updateTaskFields(task.id, { subtasks });
+      setTasksError("");
+      notifyAgent(`已给「${task.title}」添加子任务「${title}」`);
+    } catch (cause) {
+      setTasksError(cause instanceof Error ? cause.message : "添加子任务失败。");
+    } finally {
+      void refreshTasks();
+    }
+  }
+
   async function reorderTasks(ids: string[]) {
     try {
       await Promise.all(ids.map((id, index) => updateTaskFields(id, { position: index })));
@@ -396,10 +409,6 @@ export default function App() {
     startSpeech();
   }
 
-  const lastMessage = messages.at(-1);
-  const quickReplies =
-    lastMessage?.role === "assistant" ? quickRepliesFor(lastMessage.content) : [];
-
   return (
     <div className="app">
       <header>
@@ -413,25 +422,9 @@ export default function App() {
             messages={messages}
             pending={pending}
             onEditMessage={(index, text) => void editMessage(index, text)}
+            onQuickReply={(text) => void send(text)}
           />
           <div className="compose">
-            {quickReplies.length > 0 && (
-              <div className="suggestions quick-suggestions" aria-label="快捷回复">
-                <span className="quick-label">快捷回复</span>
-                {quickReplies.map((item) => (
-                  <button
-                    key={item.text}
-                    type="button"
-                    className="suggestion quick"
-                    title={`${item.text}（点一下填进输入框）`}
-                    disabled={pending}
-                    onClick={() => chooseSuggestion(item.text)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
-              </div>
-            )}
             <div className="suggestions" aria-label="预设提示词">
               {suggestions.map((item) => (
                 <button
@@ -593,6 +586,7 @@ export default function App() {
           onToggleReminders={() => void toggleReminders()}
           onEdit={editTaskFields}
           onReorder={reorderTasks}
+          onAddSubtask={addSubtask}
         />
       </main>
     </div>

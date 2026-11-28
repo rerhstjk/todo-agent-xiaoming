@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { defaultActivity, type ActivityLog } from "./activity.ts";
 import { createNextOccurrence } from "./commands.ts";
-import type { TaskStore } from "./task-store.ts";
+import type { Task, TaskStore } from "./task-store.ts";
 
 const createTaskSchema = z.strictObject({ title: z.string().trim().min(1).max(200) });
 const subtaskSchema = z.strictObject({
@@ -37,11 +37,17 @@ const updateTaskSchema = createTaskSchema
 
 const taskNotFound = { error: "找不到这条任务。" };
 
+/** createdAt 只用于服务端把同批任务分组，不暴露在 HTTP 契约里。 */
+function wireTask(task: Task) {
+  const { createdAt: _createdAt, ...rest } = task;
+  return rest;
+}
+
 export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActivity) {
   const router = Router();
 
   router.get("/", (_req, res) => {
-    res.json(tasks.list());
+    res.json(tasks.list().map(wireTask));
   });
 
   router.post("/", (req, res) => {
@@ -51,7 +57,8 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     }
     const created = tasks.create(input.data.title);
     activity.record({ kind: "created", title: created.title });
-    res.status(201).json(created);
+    // 对外保持最小任务结构；createdAt 只用于服务端把同批任务分组。
+    res.status(201).json(wireTask(created));
   });
 
   router.patch("/:id", (req, res) => {
@@ -80,7 +87,7 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
       const next = createNextOccurrence(tasks, updated);
       if (next) activity.record({ kind: "created", title: next.title });
     }
-    res.json(updated);
+    res.json(wireTask(updated));
   });
 
   router.delete("/:id", (req, res) => {
@@ -109,7 +116,7 @@ export function taskRouter(tasks: TaskStore, activity: ActivityLog = defaultActi
     if (restored.length === 0) {
       return res.status(404).json({ error: "没有可以撤销的删除。" });
     }
-    res.status(201).json(restored);
+    res.status(201).json(restored.map(wireTask));
   });
 
   return router;

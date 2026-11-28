@@ -112,6 +112,7 @@ export type TaskEditFields = {
   effort?: number | null;
   note?: string | null;
   position?: number | null;
+  subtasks?: ApiTask["subtasks"];
 };
 
 export function updateTaskFields(id: string, fields: TaskEditFields): Promise<ApiTask> {

@@ -169,15 +169,17 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
       ...created.flatMap((task) => formatTaskBlock(task, now).split("\n")),
     );
   }
+  if (created.length > 0) lines.push(pendingSummary(tasks));
 
   const missingTime = created.filter((task) => !task.startDate && !task.dueDate);
   const needsReminder = created.filter((task) => reminderAsk(task) !== undefined);
   if (missingTime.length > 0) {
     lines.push(
-      missingTime.length === 1
-        ? `「${missingTime[0]!.title}」还没有安排时间。什么时候要做？回「今天」「明天下午 3 点」，或者「暂不设置」。`
-        : `还有 ${missingTime.length} 条任务没有安排时间，可以说「开会 明天下午 3 点」逐条补上。`,
+      `「${missingTime[0]!.title}」还没有安排时间。什么时候要做？回「今天」「明天下午 3 点」，或者「暂不设置」。`,
     );
+    if (missingTime.length > 1) {
+      lines.push(`另外还有 ${missingTime.length - 1} 条任务要安排时间，我们一条一条来。`);
+    }
   } else if (needsReminder.length > 0) {
     lines.push(`要不要给这些任务设提醒？可以说「给开会设提醒」，不需要就回「不用」。`);
   }
@@ -225,7 +227,6 @@ export function createBatchChat(results: CommandResult[], now = new Date()): str
   }
 
   if (lines.length === 0) return "这次没有记下可用的任务，可以换成「记一下买牛奶」这样的说法。";
-  lines.push(pendingSummary(tasks));
   if (results.some((result) => result.duplicate)) {
     lines.push("其中有的和清单里已有的未完成任务同名，需要的话可以删掉重复的。");
   }

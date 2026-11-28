@@ -271,8 +271,11 @@ test("清单面板可以设置开始时间和提醒", async (t) => {
   });
 
   assert.equal(patched.status, 200);
+  // createdAt 只在服务端内部用于给同批任务分组，不出现在 HTTP 响应里。
   assert.deepEqual(patched.body, {
-    ...task,
+    id: task.id,
+    title: task.title,
+    done: task.done,
     startDate: "2026-11-28",
     startTime: "15:30",
     remind: true,

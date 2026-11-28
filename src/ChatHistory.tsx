@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { ChatMessage } from "../shared/chat.ts";
 import { parseChatTasks, type ChatTaskRow } from "./task-message.ts";
+import { quickRepliesFor } from "./suggestions.ts";
 
 interface ChatHistoryProps {
   messages: ChatMessage[];
   pending: boolean;
   onEditMessage: (index: number, text: string) => void;
+  onQuickReply: (text: string) => void;
 }
 
-export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryProps) {
+export function ChatHistory({ messages, pending, onEditMessage, onQuickReply }: ChatHistoryProps) {
   const viewport = useRef<HTMLDivElement>(null);
   const [editing, setEditing] = useState<number | null>(null);
   // 只有最新一轮的提问可以改；改更早的内容会连带回滚好几轮操作，容易让人误以为任务丢了。
@@ -90,6 +92,25 @@ export function ChatHistory({ messages, pending, onEditMessage }: ChatHistoryPro
                   ) : (
                     <div>{message.content}</div>
                   )}
+                  {message.role === "assistant" &&
+                    index === messages.length - 1 &&
+                    !pending &&
+                    quickRepliesFor(message.content).length > 0 && (
+                      <div className="message-quick" aria-label="快捷回复">
+                        <span className="message-quick-label">快捷回复</span>
+                        {quickRepliesFor(message.content).map((item) => (
+                          <button
+                            key={item.text}
+                            type="button"
+                            className="quick-chip"
+                            title={`点一下直接发送：${item.text}`}
+                            onClick={() => onQuickReply(item.text)}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   {index === lastUserIndex && !pending && (
                     <button
                       type="button"

@@ -990,6 +990,30 @@ test("新建任务没时间时先问什么时候做，并把简短回答补成�
   assert.equal(task?.startTime, "15:00");
 });
 
+test("一句话列了多件事时会拆成多条任务，并逐条问时间", async () => {
+  const { store, send } = fixture();
+
+  const created = await send("提醒我买牛奶，拿快递");
+  assert.deepEqual(
+    store.list().map((task) => task.title),
+    ["买牛奶", "拿快递"],
+  );
+  assert.match(created, /已记下 2 条任务/);
+  assert.match(created, /「买牛奶」还没有安排时间/);
+  assert.match(created, /还有 1 条任务/);
+
+  const first = await send("今天");
+  assert.match(first, /买牛奶/);
+  assert.match(first, /「拿快递」还没有安排时间/);
+
+  const second = await send("明天下午三点");
+  assert.match(second, /安排在明天 15:00/);
+  const [milk, pickup] = store.list();
+  assert.equal(milk?.startDate, "2026-11-26");
+  assert.equal(pickup?.startDate, "2026-11-27");
+  assert.equal(pickup?.startTime, "15:00");
+});
+
 test("回答暂不设置时保留无时间任务，提问也不会被误当成时间", async () => {
   const { store, send } = fixture();
 

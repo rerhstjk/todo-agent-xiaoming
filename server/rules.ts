@@ -25,7 +25,9 @@ import { formatReminderPlan } from "./reminders.ts";
 import {
   normalizeTags,
   taskEffortHours,
+  taskStartDate,
   type Priority,
+  type Task,
   type TaskPatch,
   type TaskStore,
 } from "./task-store.ts";
@@ -661,6 +663,22 @@ interface CreateClause {
  * 或者本身又是一条「记一下…」时才拆，避免把「周五开会，讨论预算」误拆成两条。
  */
 function splitCreateClauses(text: string): CreateClause[] | undefined {
+  // 「提醒我买牛奶，拿快递」这类并列祈使句：同一个动词带多个短宾语，拆成多条任务。
+  const LIST_LEAD = /^(?:提醒我|提醒|帮我记一下|帮我记|记一下|记一条|记个)/;
+  if (LIST_LEAD.test(text) && !findDateText(text, new Date()) && !findClockTime(text)) {
+    const body = text.replace(LIST_LEAD, "").trim();
+    const items = body
+      .split(/[，,、；;]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const simple = items.length >= 2 && items.every((item) => /^[^\d]{2,20}$/.test(item));
+    const qualifiers =
+      /(优先级|工作量|预计|标签|备注|子任务|提前|会前|开始前|截止前|到期前|提醒我)/;
+    if (simple && items.every((item) => !qualifiers.test(item))) {
+      return items.map((item) => ({ kind: "task", text: `记一下${item}` }));
+    }
+  }
+
   const parts = text
     .split(CLAUSE_SEPARATOR)
     .map((part) => part.trim())
@@ -882,6 +900,30 @@ export function ruleReply(store: TaskStore, messages: ChatMessage[], now = new D
 
 /** 上一条回复问过「要不要设提醒」时，处理用户回的「要 / 不用」。 */
 /** 上一条回复问「什么时候要做」时，把「今天 / 明天下午三点 / 暂不设置」这类简短回答补成开始时间。 */
+/** 用户对某条新任务选了「暂不设置」后，下一次不要再问它。 */
+const skippedTimeTasks = new Set<string>();
+
+/** 同一句里拆出来的任务创建时间相差很小，用 createdAt 找同批的下一条。 */
+function nextMissingTimeTask(store: TaskStore, task: Task): Task | undefined {
+  const createdAt = task.createdAt;
+  if (typeof createdAt !== "number") return undefined;
+  return store
+    .list()
+    .find(
+      (item) =>
+        item.id !== task.id &&
+        !item.done &&
+        !taskStartDate(item) &&
+        typeof item.createdAt === "number" &&
+        Math.abs(item.createdAt - createdAt) < 5_000 &&
+        !skippedTimeTasks.has(item.id),
+    );
+}
+
+function askTimeQuestion(task: Task): string {
+  return `「${task.title}」还没有安排时间。什么时候要做？回「今天」「明天下午 3 点」，或者「暂不设置」。`;
+}
+
 function scheduleFollowUp(
   store: TaskStore,
   messages: ChatMessage[],
@@ -893,9 +935,11 @@ function scheduleFollowUp(
 
   const text = messages.at(-1)?.content.trim() ?? "";
   if (!text) return undefined;
+  // 追问里带着任务名，直接用它；比从整段回复里数「提到了几条任务」更准。
+  const askedTitle = /「(.+?)」还没有安排时间/.exec(previous)?.[1];
 
   if (/^(?:暂不设置|先不设置|不设置|不用设置|不用了|跳过|算了)[吧了啊呀!！。]?$/.test(text)) {
-    const title = contextTask(store, messages);
+    const title = askedTitle ?? contextTask(store, messages);
     const task = title
       ? store.list().find((item) => item.title === title && !item.done)
       : undefined;
@@ -908,7 +952,7 @@ function scheduleFollowUp(
   // 「今天有哪些任务到期？」是在提问，不能当成时间回答。
   if (LIST_WORDS.test(text) || CREATE_WORDS.test(text) || QUERY_WORDS.test(text)) return undefined;
 
-  const title = contextTask(store, messages);
+  const title = askedTitle ?? contextTask(store, messages);
   if (!title) return undefined;
 
   const date = findDateText(text, now);
@@ -931,6 +975,10 @@ function scheduleFollowUp(
   const reply = chatReply(result, now);
   const task = result.task;
   if (!task) return reply;
+  const next = nextMissingTimeTask(store, task);
+  if (next) {
+    return `${reply}\n${askTimeQuestion(next)}`;
+  }
   if (task.remind !== true && task.startDate) {
     return `${reply}\n要不要给「${task.title}」设个提醒？默认开始前 30 分钟，回「要」或「不用」。`;
   }

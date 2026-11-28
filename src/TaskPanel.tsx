@@ -84,6 +84,7 @@ export function TaskPanel({
   onToggleReminders,
   onEdit,
   onReorder,
+  onAddSubtask,
 }: {
   tasks: ApiTask[];
   loading: boolean;
@@ -105,6 +106,8 @@ export function TaskPanel({
   onEdit: (task: ApiTask, fields: TaskEditFields) => void | Promise<void>;
   /** 手动排序：按新顺序回写 position。 */
   onReorder: (ids: string[]) => void | Promise<void>;
+  /** 在编辑表单里直接给任务加一条子任务。 */
+  onAddSubtask: (task: ApiTask, title: string) => void | Promise<void>;
 }) {
   const [view, setView] = useState<"list" | "calendar">("list");
   const [status, setStatus] = useState<Status>("open");
@@ -120,6 +123,7 @@ export function TaskPanel({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<EditDraft | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [subtaskDraft, setSubtaskDraft] = useState("");
   const activeFilters =
     (tagFilter !== "all" ? 1 : 0) +
     (timeFilter !== "all" ? 1 : 0) +
@@ -213,6 +217,7 @@ export function TaskPanel({
 
   function beginEdit(task: ApiTask) {
     setEditingId(task.id);
+    setSubtaskDraft("");
     setDraft({
       title: task.title,
       startDate: task.startDate ?? "",
@@ -487,6 +492,50 @@ export function TaskPanel({
                 placeholder="未估算"
               />
             </label>
+            <div className="task-edit-wide task-edit-subtasks">
+              <span className="task-edit-label">子任务</span>
+              {task.subtasks && task.subtasks.length > 0 ? (
+                <ul className="task-edit-subtask-list">
+                  {task.subtasks.map((subtask) => (
+                    <li key={subtask.id} className={subtask.done ? "done" : ""}>
+                      <span aria-hidden="true">{subtask.done ? "✓" : "○"}</span>
+                      {subtask.title}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="task-edit-empty">还没有子任务，可以在这里加一条。</p>
+              )}
+              <div className="task-edit-subtask-add">
+                <input
+                  value={subtaskDraft}
+                  maxLength={200}
+                  placeholder="子任务标题，例如 整理数据"
+                  aria-label="新子任务标题"
+                  onChange={(event) => setSubtaskDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return;
+                    event.preventDefault();
+                    const title = subtaskDraft.trim();
+                    if (!title) return;
+                    void onAddSubtask(task, title);
+                    setSubtaskDraft("");
+                  }}
+                />
+                <button
+                  type="button"
+                  disabled={!subtaskDraft.trim()}
+                  onClick={() => {
+                    const title = subtaskDraft.trim();
+                    if (!title) return;
+                    void onAddSubtask(task, title);
+                    setSubtaskDraft("");
+                  }}
+                >
+                  添加子任务
+                </button>
+              </div>
+            </div>
             <label className="task-edit-wide">
               备注
               <textarea
@@ -504,6 +553,7 @@ export function TaskPanel({
                 onClick={() => {
                   setEditingId(null);
                   setDraft(null);
+                  setSubtaskDraft("");
                 }}
               >
                 取消

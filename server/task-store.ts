@@ -22,6 +22,8 @@ export interface Task {
   id: string;
   title: string;
   done: boolean;
+  /** 创建时间（毫秒），只用于把同一句话拆出来的多条任务排成一组。 */
+  createdAt?: number;
   note?: string;
   /** 开始日期，YYYY-MM-DD；用于「从明天开始」这类安排。 */
   startDate?: string;
@@ -222,7 +224,12 @@ export function normalizeTitle(title: string): string {
 /** 把创建参数整理成一条完整任务；两个存储后端共用。 */
 export function buildTask(input: string | NewTask): Task {
   const draft = typeof input === "string" ? { title: input } : input;
-  const task: Task = { id: randomUUID(), title: normalizeTitle(draft.title), done: false };
+  const task: Task = {
+    id: randomUUID(),
+    title: normalizeTitle(draft.title),
+    done: false,
+    createdAt: Date.now(),
+  };
   if (draft.note?.trim()) task.note = draft.note.trim();
   if (isDateString(draft.startDate)) task.startDate = draft.startDate;
   if (isDateString(draft.startDate) && isTimeString(draft.startTime))
