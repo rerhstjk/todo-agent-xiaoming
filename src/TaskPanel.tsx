@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ApiTask } from "./chat-client.ts";
 import { TaskCalendar } from "./TaskCalendar.tsx";
 import type { ReminderPermission } from "./use-reminders.ts";
@@ -105,6 +105,13 @@ export function TaskPanel({
     (timeFilter !== "all" ? 1 : 0) +
     (priorityFilter !== "all" ? 1 : 0) +
     (effortFilter !== "all" ? 1 : 0);
+  // 每隔半分钟重算一次，让「过了开始时间」自动进入逾期，不用手动刷新。
+  const [, setNowTick] = useState(0);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowTick((value) => value + 1), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
   const today = toDateString(new Date());
   const weekEnd = endOfWeek();
 

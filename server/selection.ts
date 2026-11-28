@@ -66,12 +66,13 @@ function scheduleMoment(task: Task): number | undefined {
   return deadlineMoment(date, scheduleTime(task) ?? "09:00")?.getTime();
 }
 
-/** 开始日期已经过去、还没完成的视为逾期；只有日期时按整天判断。 */
+/** 开始时刻已经过去、还没完成就算逾期；只有日期时按当天 23:59 算。 */
 export function isOverdue(task: Task, now: Date): boolean {
   if (task.done) return false;
   const date = scheduleDate(task);
   if (!date) return false;
-  return date < toDateString(now);
+  const moment = deadlineMoment(date, scheduleTime(task));
+  return moment !== undefined && moment.getTime() < now.getTime();
 }
 
 export function overdueTasks(tasks: Task[], now: Date): Task[] {

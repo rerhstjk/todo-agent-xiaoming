@@ -128,11 +128,24 @@ export function reminderDetail(task: ApiTask): string {
   return plan.length > 0 ? plan.map((entry) => entry.label).join("、") : "";
 }
 
-/** 开始日期已经过去、还没完成，就算逾期。 */
+/** 开始时刻已经过去、还没完成，就算逾期；只有日期时按当天 23:59 算。 */
+export function scheduleMoment(task: ApiTask): number | undefined {
+  const date = parseDateString(task.startDate ?? task.dueDate);
+  if (!date) return undefined;
+  const [hour, minute] = (task.startTime ?? task.dueTime ?? "23:59").split(":").map(Number);
+  return new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+    hour ?? 23,
+    minute ?? 59,
+  ).getTime();
+}
+
 export function isOverdue(task: ApiTask): boolean {
   if (task.done) return false;
-  const date = task.startDate ?? task.dueDate;
-  return date !== undefined && date < toDateString(new Date());
+  const moment = scheduleMoment(task);
+  return moment !== undefined && moment < Date.now();
 }
 
 /** 列表里的截止时间：今天 17:00 / 明天 09:30 / 11月30日 / 已逾期 · 11月26日。 */

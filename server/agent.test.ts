@@ -933,3 +933,15 @@ test("预设的「记一件事」句子能一次解析开始时间、会前提�
   assert.deepEqual(task.reminderAt, ["2026-11-27T14:40"]);
   assert.equal(task.effort, 2);
 });
+
+test("过了开始时刻的任务会归入逾期，不用等到第二天", async () => {
+  const { store, send } = fixture();
+
+  await send("今天早上8点开会");
+  const task = store.list()[0];
+  assert.equal(task?.startDate, "2026-11-26");
+  assert.equal(task?.startTime, "08:00");
+
+  const reply = await send("哪些任务逾期了？");
+  assert.match(reply, /开会/);
+});
