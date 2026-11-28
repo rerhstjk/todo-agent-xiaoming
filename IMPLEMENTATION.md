@@ -28,7 +28,7 @@ npm run build
 `server/app.test.ts` 是项目原有的 API 测试，未做修改。
 
 也可以手动验证：`npm run dev` 后打开页面，按 README 的表格逐句发送；
-右侧「待办清单」面板会实时显示任务，勾选和删除按钮走同一份任务存储：默认 `data/tasks.json`，设置 `XIAOMING_STORE=sqlite` 时换成 `data/xiaoming.db`（`server/sqlite-task-store.ts`，首次启动从旧 JSON 迁移）。
+右侧「待办清单」面板会实时显示任务，勾选和删除按钮走同一份 `data/tasks.json`。
 刷新页面或重启服务后清单仍在。
 
 ## 架构
@@ -163,13 +163,6 @@ HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只
   发送前的状态，再截断对话重新请求；被回滚的不只是这一轮的任务改动，用户在面板上手动的勾选、
   删除也一起恢复。只开放最新一轮，是因为回改更早的内容会连带撤销好几轮操作，容易让人误以为任务丢了；
   快照缺失或过期时不会硬改，会提示原因并中止这次编辑。
-
-## 存储后端
-
-- 默认 `server/task-store.ts` 的 `createJsonTaskStore`：零依赖、人类可读、整份原子替换（`.tmp` + rename），单进程下最省心。
-- 可选 `server/sqlite-task-store.ts`：`node:sqlite` 的 `DatabaseSync`，WAL + 事务；任务整包存 `payload`，冗余 `done` / `start_date` 两列便于排序统计；删除撤销与 JSON 后端一样只保留在进程内存。
-- `server/default-store.ts` 按 `XIAOMING_STORE` 选择实例，智能体与 HTTP API 共用同一个，首次打开空库时自动迁移 `data/tasks.json`。
-- PATCH 的 `startDate/startTime/priority/effort/tags/note/position` 都可以传 `null` 清空，空白备注由面板转成 `null`。
 
 ## 已知限制 / 后续可做
 

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import { toEffortHours } from "./effort.ts";
 import { isRepeat, type Repeat } from "./recurrence.ts";
@@ -338,4 +338,12 @@ export function createJsonTaskStore(filename: string): TaskStore {
       return restored;
     },
   };
+}
+
+let shared: TaskStore | undefined;
+
+/** 服务端共用一个指向 data/tasks.json 的实例，智能体与任务 API 必须读写同一份清单。 */
+export function defaultTaskStore(): TaskStore {
+  shared ??= createJsonTaskStore(join("data", "tasks.json"));
+  return shared;
 }

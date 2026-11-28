@@ -13,8 +13,7 @@ import { formatChineseDate, toClockString } from "./dates.ts";
 import { pendingSummary } from "./format.ts";
 import { getModelClient, model } from "./model.ts";
 import { ruleReply } from "./rules.ts";
-import { defaultTaskStore } from "./default-store.ts";
-import type { TaskStore } from "./task-store.ts";
+import { defaultTaskStore, type TaskStore } from "./task-store.ts";
 import { runTool, toolSchemas } from "./tools.ts";
 
 export type { ChatMessage } from "../shared/chat.ts";
