@@ -370,9 +370,6 @@ export function TaskPanel({
             </button>
             <div className="task-body">
               <div className="task-main">
-                {hasManualOrder && !sorting && status === "open" && (
-                  <span className={`mini-group group-${bucket}`}>{GROUP_META[bucket].label}</span>
-                )}
                 <button
                   type="button"
                   className="task-title-button"
@@ -381,6 +378,9 @@ export function TaskPanel({
                 >
                   {task.title}
                 </button>
+                {hasManualOrder && !sorting && status === "open" && (
+                  <span className={`mini-group group-${bucket}`}>{GROUP_META[bucket].label}</span>
+                )}
                 {repeat && <span className="repeat-tag">{repeat}</span>}
                 {(task.remind === true || (task.reminderAt?.length ?? 0) > 0) && (
                   <span
