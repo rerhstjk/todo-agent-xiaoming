@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { toEffortHours } from "./effort.ts";
 import { isRepeat, type Repeat } from "./recurrence.ts";
@@ -347,10 +347,6 @@ export function createJsonTaskStore(filename: string): TaskStore {
   };
 }
 
-let shared: TaskStore | undefined;
-
-/** 服务端共用一个指向 data/tasks.json 的实例，智能体与任务 API 必须读写同一份清单。 */
-export function defaultTaskStore(): TaskStore {
-  shared ??= createJsonTaskStore(join("data", "tasks.json"));
-  return shared;
-}
+// 兼容模板入口：默认存储已切到 SQLite，实现放在 default-store.ts。
+// 这里保留同名导出，旧的 `import { defaultTaskStore } from "./task-store.ts"` 仍然可用。
+export { defaultTaskStore } from "./default-store.ts";

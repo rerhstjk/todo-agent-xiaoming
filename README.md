@@ -3,7 +3,7 @@
 [![CI](https://github.com/rerhstjk/todo-agent-xiaoming/actions/workflows/ci.yml/badge.svg)](https://github.com/rerhstjk/todo-agent-xiaoming/actions/workflows/ci.yml)
 
 用中文对话管理待办：说「帮我记一下买牛奶」就新增一条，说「牛奶买好了」就标记完成，
-清单会实时同步到一个表格/日历面板。任务保存在本地 JSON 文件里，重启服务不会丢。
+清单会实时同步到一个表格/日历面板。任务保存在本地 SQLite 数据库（`data/tasks.db`）里，重启服务不会丢。
 
 这个仓库基于 [TokeNow/todo-agent](https://github.com/TokeNow/todo-agent) 的模板实现：
 模板只提供聊天界面、任务 API 和 DeepSeek 客户端，初始的 `reply()` 固定返回一句欢迎语。
@@ -19,7 +19,8 @@
 - **完成 / 重开**：`牛奶买好了` → 标记完成；`把牛奶改回未完成` 可以撤回。
 - **删除**：`取快递这条删掉吧`，或点清单行尾的 ×；面板 8 秒内可撤销，
   对话里说「撤销刚才的删除」随时可以恢复（服务端保留最近 20 条）。
-- **持久化**：任务写入 `data/tasks.json`，刷新页面、重启服务后仍可查询。
+- **持久化**：任务写入 `data/tasks.db`（SQLite，`node:sqlite` 内置模块），刷新页面、重启服务后仍可查询；
+  首次从旧版本升级时会自动导入 `data/tasks.json`，原文件保留；设置 `XIAOMING_STORE=json` 可回退到 JSON。
 
 ### 扩展功能
 
@@ -67,7 +68,7 @@ Windows PowerShell 用 `Copy-Item .env.example .env`。更多细节见[本地开
 ## 验证方式
 
 ```sh
-npm test          # 100 个离线测试：命令层、验收对话、API、模型工具循环、时区
+npm test          # 107 个离线测试：命令层、验收对话、API、模型工具循环、时区、SQLite
 npm run demo      # 不开服务、不花模型费用，在终端跑一遍验收对话与扩展场景
 npm run typecheck
 npm run build
@@ -104,7 +105,9 @@ README 里的验收对话就是 `server/agent.test.ts` 的第一条测试，逐�
 | `server/dates.ts`      | 中文日期/时刻/相对时间解析                            |
 | `server/selection.ts`  | 时间范围、排序、逾期判断                              |
 | `server/timezone.ts`   | 固定时区（默认 Asia/Shanghai）                        |
-| `server/task-store.ts` | JSON 持久化（临时文件 + rename 原子写）               |
+| `server/task-store.ts` | `Task` 模型、`TaskStore` 接口与 JSON 实现（原子写）    |
+| `server/sqlite-task-store.ts` | SQLite 持久化（`node:sqlite`、WAL、事务）      |
+| `server/default-store.ts` | 选择默认后端并把旧 JSON 迁移到 SQLite             |
 | `src/App.tsx`          | 聊天界面、消息编辑、提醒开关                          |
 | `src/TaskPanel.tsx`    | 表格清单、搜索、筛选、批量操作                        |
 | `src/TaskCalendar.tsx` | 月历视图                                              |

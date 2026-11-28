@@ -17,7 +17,7 @@ npm run dev          # 打开 http://127.0.0.1:3000
 ## 验证
 
 ```sh
-npm test             # 100 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区
+npm test             # 107 个测试：命令层、README 验收对话、扩展功能、API、模型工具循环、时区、SQLite
 npm run demo         # 不开服务、不花模型费用，直接在终端跑一遍验收对话和扩展场景
 npm run typecheck
 npm run build
@@ -28,7 +28,7 @@ npm run build
 `server/app.test.ts` 是项目原有的 API 测试，未做修改。
 
 也可以手动验证：`npm run dev` 后打开页面，按 README 的表格逐句发送；
-右侧「待办清单」面板会实时显示任务，勾选和删除按钮走同一份 `data/tasks.json`。
+右侧「待办清单」面板会实时显示任务，勾选和删除按钮走同一份 `data/tasks.db`。
 刷新页面或重启服务后清单仍在。
 
 ## 架构
@@ -39,7 +39,7 @@ src/App.tsx ──POST /api/chat──▶ server/app.ts ──▶ server/agent.t
                                      │            └─ 无密钥/失败：rules.ts          │
                                      │                                            ▼
 src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/task-store.ts    server/commands.ts
-                                                        data/tasks.json              ▲
+                                                       data/tasks.db (SQLite)       ▲
                                                                                      │
                               rules.ts / tools.ts ──解析成 Command──────────────┘
                                        └── 共享 replies.ts / selection.ts / format.ts
@@ -66,7 +66,7 @@ src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/tas
   重新翻出来问。快捷回复按上一条回复的措辞匹配，渲染在助手消息正下方。
 - `server/activity.ts`：面板操作记录。清单面板（HTTP API）的增删改会记下「谁在什么时候
   做了什么」，只在内存保留 30 分钟；模型提示词会带上最近几条，规则引擎也能回答
-  「刚才删了什么」。数据仍只在 `data/tasks.json`，操作记录不落盘。
+  「刚才删了什么」。任务数据在 `data/tasks.db`，操作记录不落盘。
 - `server/selection.ts`：查看范围。`all` / `open` / `done` / `today` / `tomorrow` / `week` /
   `overdue` 的筛选规则集中在此，对话、工具、前端共用同一套语义。
 - `server/task-view.ts`：对外暴露的任务视图（`PublicTask`），把内部 `Task` 与 API/模型
@@ -85,9 +85,25 @@ src/TaskPanel.tsx ──/api/tasks──▶ server/tasks.ts ──▶ server/tas
   优先级、预计用时、子任务进度。
 - `server/effort.ts`：把「大概两小时」「一个半小时」「半小时」「1.5h」统一换算成小时，
   同时兼容旧数据里的 `small` / `medium` / `large`（折算成 1 / 3 / 6 小时）。
-- `server/task-store.ts`：JSON 持久化。用 `z.looseObject` 读取，未知字段原样保留
-  （项目原有测试要求 `priority: 1` 这种扩展字段不能在更新时丢失）；
-  写文件用临时文件 + rename，避免写到一半损坏；JSON 损坏时给出可操作的错误。
+- `server/task-store.ts`：`Task` 模型与 `TaskStore` 接口，另带一份 JSON 实现（临时文件 + rename 原子写），
+  供 `XIAOMING_STORE=json` 和测试使用。用 `z.looseObject` 读取，未知字段原样保留
+  （项目原有测试要求 `priority: 1` 这种扩展字段不能在更新时丢失）。
+- `server/sqlite-task-store.ts`：默认存储。`tasks(seq, id, data)` 表，WAL + busy_timeout，
+  整体覆盖用事务；`server/default-store.ts` 负责选后端与一次性迁移。
+
+## 存储层
+
+默认用 SQLite（Node 内置 `node:sqlite`，不需要额外依赖），数据库文件是 `data/tasks.db`：
+
+- 表结构只有 `tasks(seq INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT UNIQUE, data TEXT)`，
+  整条任务以 JSON 存在 `data` 列里，既能索引 id，又保留扩展字段。
+- 开启 `journal_mode = WAL` 与 `busy_timeout = 5000`：面板、对话、测试等多个连接同时写时，
+  SQLite 会串行化写入并等待锁，而不是互相覆盖或直接报错。
+- `TaskStore` 接口不变（`list/get/create/update/remove/restoreLast/snapshotAll/restoreAll`），
+  `server/task-store.ts` 里的 JSON 实现仍保留，设置 `XIAOMING_STORE=json` 即可整体回退。
+- 第一次创建 `tasks.db` 时，如果存在旧的 `data/tasks.json` 会自动导入，原 JSON 文件保留；
+  之后即使清空清单再重启，也不会把旧数据导回来。
+- 删除撤销栈（最近 20 条）与对话回滚快照（最多 100 份）仍只在进程内存里，重启清空。
 
 ## 数据模型
 
@@ -143,7 +159,7 @@ HTTP API（`server/openapi.yaml`）的创建接口保持原契约不变，仍只
 - 模型调用失败：若本轮还没改数据，退回规则引擎；若已经改过，直接汇报已执行结果，
   避免同一条指令被执行两次。
 - 对话超过 20 条只取最近 20 条传给模型，控制上下文和费用。
-- `tasks.json` 损坏：接口返回明确错误，不静默清空用户数据。
+- `tasks.db` 无法读写或 JSON 清单损坏：接口返回明确错误，不静默清空用户数据。
 - 补记过去的事（「昨天交房租」）：开始日期落在昨天，会直接出现在逾期列表里。
 - 清单里的子任务会缩进显示标题和完成状态（「　　○ 准备材料」），面板也能逐条勾选。
 - 在面板上用叉号删除、勾选完成或勾选子任务，都会记一条面板操作，并提示「已通知小明」；
